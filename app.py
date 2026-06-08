@@ -1,12 +1,14 @@
 import csv
 import json
 import os
+import threading
 from datetime import datetime
 
 from flask import Flask, jsonify, redirect, render_template, request
 
 from config import ABNORMAL_DURATION_SECONDS, DEFAULT_PLANT_CONFIG
-from hardware import read_sensor, set_buzzer, set_fan, set_pump, setup_hardware
+from mqtt_service import MqttService
+from mqtt_topics import COMMAND_TOPIC, DEVICE_STATE_TOPIC, SENSOR_TOPIC, STATUS_TOPIC
 from notifier import send_notification_once
 
 app = Flask(__name__)
@@ -16,6 +18,14 @@ HISTORY_FILE = "sensor_history.csv"
 MAX_HISTORY_ROWS = 500
 HISTORY_API_LIMIT = 30
 
+DEFAULT_SENSOR = {
+    "temperature": None,
+    "humidity": None,
+    "light": "unknown",
+    "measured_at": "-",
+    "mode": "waiting",
+}
+
 device_state = {
     "fan": False,
     "pump": False,
@@ -24,9 +34,63 @@ device_state = {
 }
 
 abnormal_start_time = None
-latest_sensor = None
+latest_sensor = DEFAULT_SENSOR.copy()
 latest_warnings = []
 latest_abnormal = []
+latest_device_status = {"service": "device-agent", "connected": False}
+
+state_lock = threading.Lock()
+mqtt_service = MqttService(client_id="plant-dashboard-service")
+runtime_started = False
+
+
+def ensure_runtime_started():
+    global runtime_started
+    if runtime_started:
+        return
+
+    mqtt_service.subscribe_json(SENSOR_TOPIC, handle_sensor_message)
+    mqtt_service.subscribe_json(DEVICE_STATE_TOPIC, handle_device_state_message)
+    mqtt_service.subscribe_json(STATUS_TOPIC, handle_status_message)
+    mqtt_service.start()
+    runtime_started = True
+
+
+def handle_sensor_message(sensor: dict):
+    global latest_sensor, latest_warnings, latest_abnormal
+
+    sensor = normalize_sensor(sensor)
+    with state_lock:
+        latest_sensor = sensor
+
+    append_sensor_history(sensor)
+
+    config = load_config()
+    abnormal, warnings = analyze_status(sensor, config)
+    apply_auto_control(sensor, config, abnormal)
+
+    with state_lock:
+        latest_warnings = warnings
+        latest_abnormal = abnormal
+
+
+def handle_device_state_message(payload: dict):
+    with state_lock:
+        for name in ("fan", "pump", "buzzer"):
+            if name in payload:
+                device_state[name] = bool(payload[name])
+
+
+def handle_status_message(payload: dict):
+    global latest_device_status
+    with state_lock:
+        latest_device_status = payload
+
+
+def normalize_sensor(sensor: dict):
+    normalized = DEFAULT_SENSOR.copy()
+    normalized.update(sensor)
+    return normalized
 
 
 def load_config():
@@ -189,13 +253,9 @@ def apply_auto_control(sensor, config, abnormal):
         previous_pump = device_state["pump"]
         previous_buzzer = device_state["buzzer"]
 
-        device_state["fan"] = fan_on
-        device_state["pump"] = pump_on
-        device_state["buzzer"] = buzzer_on
-
-        set_fan(fan_on)
-        set_pump(pump_on)
-        set_buzzer(buzzer_on)
+        publish_device_command("fan", fan_on)
+        publish_device_command("pump", pump_on)
+        publish_device_command("buzzer", buzzer_on)
 
         plant_name = config.get("plant_name", "식물")
 
@@ -236,19 +296,29 @@ def apply_auto_control(sensor, config, abnormal):
     return abnormal_duration
 
 
+def publish_device_command(name: str, on: bool):
+    mqtt_service.publish(
+        COMMAND_TOPIC,
+        {
+            "name": name,
+            "action": "on" if on else "off",
+            "requested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        },
+    )
+
+
 def update_system_once():
-    global latest_sensor, latest_warnings, latest_abnormal
+    ensure_runtime_started()
 
     config = load_config()
-    sensor = read_sensor()
-    append_sensor_history(sensor)
+    with state_lock:
+        sensor = latest_sensor.copy()
+        abnormal = list(latest_abnormal)
+        warnings = list(latest_warnings)
 
-    abnormal, warnings = analyze_status(sensor, config)
-    abnormal_duration = apply_auto_control(sensor, config, abnormal)
-
-    latest_sensor = sensor
-    latest_warnings = warnings
-    latest_abnormal = abnormal
+    abnormal_duration = 0
+    if abnormal_start_time is not None:
+        abnormal_duration = (datetime.now() - abnormal_start_time).total_seconds()
 
     return config, sensor, abnormal, warnings, abnormal_duration
 
@@ -267,6 +337,8 @@ def index():
         abnormal_required=int(config["abnormal_duration_seconds"]),
         device_state=device_state,
         history_limit=HISTORY_API_LIMIT,
+        mqtt_connected=mqtt_service.connected,
+        device_connected=latest_device_status.get("connected", False),
     )
 
 
@@ -296,7 +368,6 @@ def change_mode(mode):
 @app.route("/device/<name>/<action>")
 def control_device(name, action):
     on = action == "on"
-
     device_state["control_mode"] = "manual"
 
     device_name_ko = {
@@ -305,15 +376,7 @@ def control_device(name, action):
         "buzzer": "부저",
     }
 
-    if name == "fan":
-        device_state["fan"] = on
-        set_fan(on)
-    elif name == "pump":
-        device_state["pump"] = on
-        set_pump(on)
-    elif name == "buzzer":
-        device_state["buzzer"] = on
-        set_buzzer(on)
+    publish_device_command(name, on)
 
     if name in device_name_ko:
         send_notification_once(
@@ -337,6 +400,8 @@ def api_status():
             "warnings": warnings,
             "abnormal_duration": int(abnormal_duration),
             "device_state": device_state,
+            "mqtt_connected": mqtt_service.connected,
+            "device_connected": latest_device_status.get("connected", False),
         }
     )
 
@@ -352,6 +417,6 @@ def api_history():
 
 
 if __name__ == "__main__":
-    setup_hardware()
+    ensure_runtime_started()
     ensure_history_file()
     app.run(host="0.0.0.0", port=5000, debug=True)

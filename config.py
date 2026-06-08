@@ -36,6 +36,13 @@ DEFAULT_PLANT_CONFIG = {
     "abnormal_duration_seconds": ABNORMAL_DURATION_SECONDS,
 }
 
+# MQTT settings
+MQTT_BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
+MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
+MQTT_TOPIC_PREFIX = os.getenv("MQTT_TOPIC_PREFIX", "iot/plant-monitor")
+
 # Email Notification
 EMAIL_ENABLED = True
 
