@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>화분 생장 환경 모니터링</title>
-    <meta http-equiv="refresh" content="5">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
@@ -53,6 +52,15 @@
             color: #777;
             font-weight: bold;
         }
+        .device-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .status-list p {
+            margin: 8px 0;
+        }
         a.btn, button {
             display: inline-block;
             padding: 8px 13px;
@@ -90,10 +98,10 @@
     <h1>화분 생장 환경 모니터링 시스템</h1>
 
     <div class="card">
-        <h2>{{ config.plant_name }}</h2>
-        <p>측정 시간: {{ sensor.measured_at }}</p>
-        <p>센서 모드: <strong>{{ sensor.mode }}</strong></p>
-        <p>제어 모드: <strong>{{ device_state.control_mode }}</strong></p>
+        <h2 id="plantName">{{ config.plant_name }}</h2>
+        <p>측정 시간: <strong id="measuredAt">{{ sensor.measured_at }}</strong></p>
+        <p>센서 모드: <strong id="sensorMode">{{ sensor.mode }}</strong></p>
+        <p>제어 모드: <strong id="controlMode">{{ device_state.control_mode }}</strong></p>
 
         <a class="btn" href="/mode/auto">자동 모드</a>
         <a class="btn off" href="/mode/manual">수동 모드</a>
@@ -104,7 +112,7 @@
         <div class="grid">
             <div class="sensor-box">
                 <p>온도</p>
-                <div class="value">
+                <div class="value" id="temperatureValue">
                     {% if sensor.temperature is not none %}
                         {{ sensor.temperature }}°C
                     {% else %}
@@ -115,7 +123,7 @@
 
             <div class="sensor-box">
                 <p>습도</p>
-                <div class="value">
+                <div class="value" id="humidityValue">
                     {% if sensor.humidity is not none %}
                         {{ sensor.humidity }}%
                     {% else %}
@@ -126,7 +134,7 @@
 
             <div class="sensor-box">
                 <p>조도</p>
-                <div class="value">
+                <div class="value" id="lightValue">
                     {% if sensor.light == "bright" %}
                         밝음
                     {% elif sensor.light == "dark" %}
@@ -141,17 +149,18 @@
 
     <div class="card">
         <h2>환경 상태</h2>
+        <div class="status-list" id="warningsBlock">
+            {% if warnings %}
+                {% for warning in warnings %}
+                    <p class="warn">{{ warning }}</p>
+                {% endfor %}
+            {% else %}
+                <p class="ok">현재 생장 환경은 정상 범위입니다.</p>
+            {% endif %}
+        </div>
 
-        {% if warnings %}
-            {% for warning in warnings %}
-                <p class="warn">{{ warning }}</p>
-            {% endfor %}
-        {% else %}
-            <p class="ok">현재 생장 환경은 정상 범위입니다.</p>
-        {% endif %}
-
-        <p>비정상 항목 수: <strong>{{ abnormal|length }}개</strong></p>
-        <p>비정상 지속 시간: <strong>{{ abnormal_duration }}초</strong> / 기준 {{ abnormal_required }}초</p>
+        <p>비정상 항목 수: <strong id="abnormalCount">{{ abnormal|length }}개</strong></p>
+        <p>비정상 지속 시간: <strong id="abnormalDuration">{{ abnormal_duration }}초</strong> / 기준 {{ abnormal_required }}초</p>
     </div>
 
     <div class="card">
@@ -165,27 +174,27 @@
     <div class="card">
         <h2>장치 상태 및 수동 제어</h2>
 
-        <p>
+        <p class="device-line">
             팬:
-            <span class="{{ 'device-on' if device_state.fan else 'device-off' }}">
+            <span id="fanState" class="{{ 'device-on' if device_state.fan else 'device-off' }}">
                 {{ "ON" if device_state.fan else "OFF" }}
             </span>
             <a class="btn" href="/device/fan/on">ON</a>
             <a class="btn off" href="/device/fan/off">OFF</a>
         </p>
 
-        <p>
+        <p class="device-line">
             펌프:
-            <span class="{{ 'device-on' if device_state.pump else 'device-off' }}">
+            <span id="pumpState" class="{{ 'device-on' if device_state.pump else 'device-off' }}">
                 {{ "ON" if device_state.pump else "OFF" }}
             </span>
             <a class="btn" href="/device/pump/on">ON</a>
             <a class="btn off" href="/device/pump/off">OFF</a>
         </p>
 
-        <p>
+        <p class="device-line">
             부저:
-            <span class="{{ 'device-on' if device_state.buzzer else 'device-off' }}">
+            <span id="buzzerState" class="{{ 'device-on' if device_state.buzzer else 'device-off' }}">
                 {{ "ON" if device_state.buzzer else "OFF" }}
             </span>
             <a class="btn danger" href="/device/buzzer/on">ON</a>
@@ -235,11 +244,43 @@
     </div>
 </div>
 <script>
-    async function loadHistoryChart() {
-        const response = await fetch("/api/history?limit={{ history_limit }}");
-        const payload = await response.json();
-        const history = payload.history || [];
+    const historyLimit = {{ history_limit }};
+    let historyChart = null;
 
+    function formatTemperature(value) {
+        return value === null ? "오류" : `${value}°C`;
+    }
+
+    function formatHumidity(value) {
+        return value === null ? "오류" : `${value}%`;
+    }
+
+    function formatLight(value) {
+        if (value === "bright") return "밝음";
+        if (value === "dark") return "어두움";
+        return "오류";
+    }
+
+    function setDeviceState(elementId, isOn) {
+        const element = document.getElementById(elementId);
+        element.textContent = isOn ? "ON" : "OFF";
+        element.className = isOn ? "device-on" : "device-off";
+    }
+
+    function renderWarnings(warnings) {
+        const container = document.getElementById("warningsBlock");
+        if (!warnings.length) {
+            container.innerHTML = '<p class="ok">현재 생장 환경은 정상 범위입니다.</p>';
+            return;
+        }
+
+        container.innerHTML = warnings
+            .map((warning) => `<p class="warn">${warning}</p>`)
+            .join("");
+    }
+
+    function buildChart(history) {
+        const ctx = document.getElementById("historyChart");
         const labels = history.map((item) => item.measured_at.slice(11));
         const temperatureData = history.map((item) => item.temperature);
         const humidityData = history.map((item) => item.humidity);
@@ -249,9 +290,7 @@
             return null;
         });
 
-        const ctx = document.getElementById("historyChart");
-
-        new Chart(ctx, {
+        historyChart = new Chart(ctx, {
             type: "line",
             data: {
                 labels,
@@ -286,6 +325,9 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: {
+                    duration: 500
+                },
                 interaction: {
                     mode: "index",
                     intersect: false
@@ -317,7 +359,59 @@
         });
     }
 
-    loadHistoryChart();
+    function updateChart(history) {
+        const labels = history.map((item) => item.measured_at.slice(11));
+        historyChart.data.labels = labels;
+        historyChart.data.datasets[0].data = history.map((item) => item.temperature);
+        historyChart.data.datasets[1].data = history.map((item) => item.humidity);
+        historyChart.data.datasets[2].data = history.map((item) => {
+            if (item.light === "bright") return 1;
+            if (item.light === "dark") return 0;
+            return null;
+        });
+        historyChart.update();
+    }
+
+    function updateStatus(status) {
+        document.getElementById("plantName").textContent = status.config.plant_name;
+        document.getElementById("measuredAt").textContent = status.sensor.measured_at;
+        document.getElementById("sensorMode").textContent = status.sensor.mode;
+        document.getElementById("controlMode").textContent = status.device_state.control_mode;
+        document.getElementById("temperatureValue").textContent = formatTemperature(status.sensor.temperature);
+        document.getElementById("humidityValue").textContent = formatHumidity(status.sensor.humidity);
+        document.getElementById("lightValue").textContent = formatLight(status.sensor.light);
+        document.getElementById("abnormalCount").textContent = `${status.abnormal.length}개`;
+        document.getElementById("abnormalDuration").textContent = `${status.abnormal_duration}초`;
+        renderWarnings(status.warnings);
+        setDeviceState("fanState", status.device_state.fan);
+        setDeviceState("pumpState", status.device_state.pump);
+        setDeviceState("buzzerState", status.device_state.buzzer);
+    }
+
+    async function refreshDashboard() {
+        try {
+            const [statusResponse, historyResponse] = await Promise.all([
+                fetch("/api/status"),
+                fetch(`/api/history?limit=${historyLimit}`)
+            ]);
+
+            const statusPayload = await statusResponse.json();
+            const historyPayload = await historyResponse.json();
+
+            updateStatus(statusPayload);
+
+            if (!historyChart) {
+                buildChart(historyPayload.history || []);
+            } else {
+                updateChart(historyPayload.history || []);
+            }
+        } catch (error) {
+            console.error("대시보드 갱신 실패:", error);
+        }
+    }
+
+    refreshDashboard();
+    setInterval(refreshDashboard, 5000);
 </script>
 </body>
 </html>
