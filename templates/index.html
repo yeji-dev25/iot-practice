@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>화분 생장 환경 모니터링</title>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f7f2;
+            margin: 30px;
+        }
+        .wrap {
+            max-width: 1000px;
+            margin: auto;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+        .sensor-box {
+            background: #eef7ec;
+            padding: 18px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        .ok {
+            color: #2e7d32;
+            font-weight: bold;
+        }
+        .warn {
+            color: #c0392b;
+            font-weight: bold;
+        }
+        .device-on {
+            color: #1565c0;
+            font-weight: bold;
+        }
+        .device-off {
+            color: #777;
+            font-weight: bold;
+        }
+        a.btn, button {
+            display: inline-block;
+            padding: 8px 13px;
+            margin: 4px;
+            border: 0;
+            border-radius: 6px;
+            background: #2e7d32;
+            color: white;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        a.off {
+            background: #777;
+        }
+        a.danger {
+            background: #c0392b;
+        }
+        input, select {
+            padding: 7px;
+            margin: 5px;
+            width: 120px;
+        }
+        label {
+            display: inline-block;
+            width: 120px;
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>화분 생장 환경 모니터링 시스템</h1>
+
+    <div class="card">
+        <h2>{{ config.plant_name }}</h2>
+        <p>측정 시간: {{ sensor.measured_at }}</p>
+        <p>센서 모드: <strong>{{ sensor.mode }}</strong></p>
+        <p>제어 모드: <strong>{{ device_state.control_mode }}</strong></p>
+
+        <a class="btn" href="/mode/auto">자동 모드</a>
+        <a class="btn off" href="/mode/manual">수동 모드</a>
+    </div>
+
+    <div class="card">
+        <h2>현재 센서값</h2>
+        <div class="grid">
+            <div class="sensor-box">
+                <p>온도</p>
+                <div class="value">
+                    {% if sensor.temperature is not none %}
+                        {{ sensor.temperature }}℃
+                    {% else %}
+                        오류
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="sensor-box">
+                <p>습도</p>
+                <div class="value">
+                    {% if sensor.humidity is not none %}
+                        {{ sensor.humidity }}%
+                    {% else %}
+                        오류
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="sensor-box">
+                <p>조도</p>
+                <div class="value">
+                    {% if sensor.light == "bright" %}
+                        밝음
+                    {% elif sensor.light == "dark" %}
+                        어두움
+                    {% else %}
+                        오류
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>환경 상태</h2>
+
+        {% if warnings %}
+            {% for warning in warnings %}
+                <p class="warn">{{ warning }}</p>
+            {% endfor %}
+        {% else %}
+            <p class="ok">현재 생장 환경이 정상 범위입니다.</p>
+        {% endif %}
+
+        <p>비정상 항목 수: <strong>{{ abnormal|length }}개</strong></p>
+        <p>비정상 지속 시간: <strong>{{ abnormal_duration }}초</strong> / 기준 {{ abnormal_required }}초</p>
+    </div>
+
+    <div class="card">
+        <h2>장치 상태 및 수동 제어</h2>
+
+        <p>
+            쿨링팬:
+            <span class="{{ 'device-on' if device_state.fan else 'device-off' }}">
+                {{ "ON" if device_state.fan else "OFF" }}
+            </span>
+            <a class="btn" href="/device/fan/on">ON</a>
+            <a class="btn off" href="/device/fan/off">OFF</a>
+        </p>
+
+        <p>
+            미니펌프:
+            <span class="{{ 'device-on' if device_state.pump else 'device-off' }}">
+                {{ "ON" if device_state.pump else "OFF" }}
+            </span>
+            <a class="btn" href="/device/pump/on">ON</a>
+            <a class="btn off" href="/device/pump/off">OFF</a>
+        </p>
+
+        <p>
+            부저:
+            <span class="{{ 'device-on' if device_state.buzzer else 'device-off' }}">
+                {{ "ON" if device_state.buzzer else "OFF" }}
+            </span>
+            <a class="btn danger" href="/device/buzzer/on">ON</a>
+            <a class="btn off" href="/device/buzzer/off">OFF</a>
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>생장 환경 기준값 설정</h2>
+
+        <form action="/config" method="post">
+            <p>
+                <label>식물 이름</label>
+                <input type="text" name="plant_name" value="{{ config.plant_name }}">
+            </p>
+
+            <p>
+                <label>최소 온도</label>
+                <input type="number" step="0.1" name="min_temp" value="{{ config.min_temp }}"> ℃
+            </p>
+
+            <p>
+                <label>최대 온도</label>
+                <input type="number" step="0.1" name="max_temp" value="{{ config.max_temp }}"> ℃
+            </p>
+
+            <p>
+                <label>최소 습도</label>
+                <input type="number" step="0.1" name="min_humidity" value="{{ config.min_humidity }}"> %
+            </p>
+
+            <p>
+                <label>최대 습도</label>
+                <input type="number" step="0.1" name="max_humidity" value="{{ config.max_humidity }}"> %
+            </p>
+
+            <p>
+                <label>필요 조도</label>
+                <select name="light_required">
+                    <option value="bright" {% if config.light_required == "bright" %}selected{% endif %}>밝음</option>
+                    <option value="dark" {% if config.light_required == "dark" %}selected{% endif %}>어두움</option>
+                </select>
+            </p>
+
+            <button type="submit">저장</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

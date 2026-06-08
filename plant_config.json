@@ -1,0 +1,8 @@
+{
+  "plant_name": "바질",
+  "min_temp": 20.0,
+  "max_temp": 28.0,
+  "min_humidity": 40.0,
+  "max_humidity": 70.0,
+  "light_required": "bright"
+}

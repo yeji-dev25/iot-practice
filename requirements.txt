@@ -1,0 +1,3 @@
+flask
+gpiozero
+adafruit-circuitpython-dht
