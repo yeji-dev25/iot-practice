@@ -2,416 +2,1162 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>화분 생장 환경 모니터링</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        :root {
+            --surface: rgba(255, 252, 246, 0.84);
+            --surface-strong: #fffdf9;
+            --line: rgba(77, 58, 39, 0.12);
+            --text: #2f2419;
+            --muted: #74614d;
+            --green: #356d43;
+            --green-soft: #e2f0de;
+            --danger: #b54c3f;
+            --danger-soft: #f7dfdb;
+            --shadow: 0 22px 48px rgba(72, 49, 20, 0.08);
+            --radius-xl: 28px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            background: #f4f7f2;
-            margin: 30px;
+            margin: 0;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(220, 231, 208, 0.9), transparent 28%),
+                radial-gradient(circle at top right, rgba(248, 237, 208, 0.8), transparent 24%),
+                linear-gradient(180deg, #f7f2e8 0%, #efe7d9 100%);
+            font-family: "Pretendard", "SUIT", "Noto Sans KR", sans-serif;
         }
-        .wrap {
-            max-width: 1000px;
-            margin: auto;
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
+            background-size: 28px 28px;
+            pointer-events: none;
+            opacity: 0.35;
         }
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 18px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+        .page {
+            position: relative;
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 40px 20px 56px;
         }
-        .grid {
+
+        .hero {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 14px;
+            grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+            gap: 18px;
+            margin-bottom: 18px;
         }
-        .sensor-box {
-            background: #eef7ec;
-            padding: 18px;
-            border-radius: 10px;
-            text-align: center;
+
+        .panel {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-xl);
+            background: var(--surface);
+            backdrop-filter: blur(18px);
+            box-shadow: var(--shadow);
         }
-        .value {
-            font-size: 32px;
-            font-weight: bold;
+
+        .hero-card {
+            padding: 28px 28px 26px;
+            background:
+                radial-gradient(circle at top right, rgba(197, 140, 43, 0.13), transparent 32%),
+                linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(250, 246, 239, 0.88));
         }
-        .ok {
-            color: #2e7d32;
-            font-weight: bold;
+
+        .hero-card::after {
+            content: "";
+            position: absolute;
+            right: -40px;
+            top: -40px;
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: rgba(220, 231, 208, 0.55);
+            filter: blur(10px);
         }
-        .warn {
-            color: #c0392b;
-            font-weight: bold;
-        }
-        .device-on {
-            color: #1565c0;
-            font-weight: bold;
-        }
-        .device-off {
-            color: #777;
-            font-weight: bold;
-        }
-        .device-line {
-            display: flex;
+
+        .eyebrow {
+            display: inline-flex;
             align-items: center;
             gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(53, 109, 67, 0.1);
+            color: var(--green);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            margin-bottom: 14px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(32px, 5vw, 50px);
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+        }
+
+        .hero-copy {
+            max-width: 620px;
+            margin: 14px 0 18px;
+            color: var(--muted);
+            font-size: 16px;
+            line-height: 1.7;
+        }
+
+        .hero-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 42px;
+            padding: 10px 14px;
+            border: 1px solid rgba(77, 58, 39, 0.08);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.74);
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .pill strong {
+            font-weight: 800;
+        }
+
+        .mode-actions,
+        .device-actions {
+            display: flex;
+            gap: 10px;
             flex-wrap: wrap;
         }
-        .status-list p {
-            margin: 8px 0;
-        }
-        a.btn, button {
-            display: inline-block;
-            padding: 8px 13px;
-            margin: 4px;
+
+        .mode-actions a,
+        .device-actions a,
+        button {
+            appearance: none;
             border: 0;
-            border-radius: 6px;
-            background: #2e7d32;
-            color: white;
+            border-radius: 999px;
+            padding: 11px 18px;
+            font: inherit;
+            font-weight: 700;
             text-decoration: none;
             cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+            text-align: center;
         }
-        a.off {
-            background: #777;
+
+        .mode-actions a:hover,
+        .device-actions a:hover,
+        button:hover {
+            transform: translateY(-1px);
         }
-        a.danger {
-            background: #c0392b;
+
+        .btn-primary {
+            background: linear-gradient(135deg, #356d43, #4e8d5d);
+            color: white;
+            box-shadow: 0 12px 24px rgba(53, 109, 67, 0.22);
         }
-        input, select {
-            padding: 7px;
-            margin: 5px;
-            width: 120px;
+
+        .btn-secondary {
+            background: rgba(116, 97, 77, 0.12);
+            color: var(--text);
         }
-        label {
-            display: inline-block;
-            width: 120px;
+
+        .overview-card {
+            padding: 22px;
+            background:
+                linear-gradient(180deg, rgba(255, 253, 249, 0.96), rgba(245, 239, 228, 0.96));
         }
+
+        .overview-card h2,
+        .section-title {
+            margin: 0 0 6px;
+            font-size: 18px;
+            letter-spacing: -0.02em;
+        }
+
+        .overview-subtitle {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .mini-stats {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .mini-stat {
+            padding: 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(77, 58, 39, 0.08);
+        }
+
+        .mini-stat-label {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .mini-stat-value {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .full-span {
+            grid-column: 1 / -1;
+        }
+
+        .span-7 {
+            grid-column: span 7;
+        }
+
+        .span-5 {
+            grid-column: span 5;
+        }
+
+        .content-card {
+            padding: 24px;
+            background: linear-gradient(180deg, rgba(255, 253, 249, 0.94), rgba(252, 248, 242, 0.88));
+        }
+
+        .card-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .card-head p {
+            margin: 6px 0 0;
+            color: var(--muted);
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .sensor-tile {
+            padding: 18px;
+            border-radius: 22px;
+            border: 1px solid rgba(77, 58, 39, 0.08);
+            background: var(--surface-strong);
+        }
+
+        .sensor-tile:nth-child(1) {
+            background: linear-gradient(180deg, #fff7ef, #fffdf9);
+        }
+
+        .sensor-tile:nth-child(2) {
+            background: linear-gradient(180deg, #eff7ff, #fffdf9);
+        }
+
+        .sensor-tile:nth-child(3) {
+            background: linear-gradient(180deg, #eef8ee, #fffdf9);
+        }
+
+        .sensor-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .sensor-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background: rgba(47, 36, 25, 0.06);
+            font-size: 16px;
+        }
+
+        .sensor-value {
+            font-size: clamp(28px, 4vw, 40px);
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            word-break: keep-all;
+        }
+
+        .sensor-caption {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .status-stack {
+            display: grid;
+            gap: 12px;
+        }
+
+        .status-note {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 14px 16px;
+            border-radius: 18px;
+            border: 1px solid transparent;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .status-note.ok {
+            color: var(--green);
+            background: var(--green-soft);
+            border-color: rgba(53, 109, 67, 0.1);
+        }
+
+        .status-note.warn {
+            color: var(--danger);
+            background: var(--danger-soft);
+            border-color: rgba(181, 76, 63, 0.12);
+        }
+
+        .status-summary {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .summary-box {
+            padding: 18px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(77, 58, 39, 0.08);
+        }
+
+        .summary-box span {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .summary-box strong {
+            font-size: 26px;
+            letter-spacing: -0.04em;
+        }
+
         .chart-wrap {
+            height: 360px;
+            padding: 14px 10px 6px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.64);
+            border: 1px solid rgba(77, 58, 39, 0.06);
+        }
+
+        .device-list {
+            display: grid;
+            gap: 14px;
+        }
+
+        .device-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 18px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(77, 58, 39, 0.08);
+        }
+
+        .device-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .device-icon {
+            display: grid;
+            place-items: center;
+            width: 44px;
+            height: 44px;
+            border-radius: 16px;
+            background: rgba(53, 109, 67, 0.12);
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .device-name {
+            font-weight: 800;
+            margin-bottom: 3px;
+        }
+
+        .device-desc {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .device-actions {
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .device-state {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 72px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-weight: 800;
+            font-size: 13px;
+            letter-spacing: 0.04em;
+        }
+
+        .device-on {
+            background: rgba(53, 109, 67, 0.12);
+            color: var(--green);
+        }
+
+        .device-off {
+            background: rgba(116, 97, 77, 0.12);
+            color: var(--muted);
+        }
+
+        .device-btn-on {
+            background: linear-gradient(135deg, #356d43, #4e8d5d);
+            color: white;
+        }
+
+        .device-btn-off {
+            background: rgba(116, 97, 77, 0.12);
+            color: var(--text);
+        }
+
+        .device-btn-danger {
+            background: linear-gradient(135deg, #b54c3f, #d36a5c);
+            color: white;
+        }
+
+        .settings-form {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px 16px;
+        }
+
+        .field {
+            display: grid;
+            gap: 8px;
+        }
+
+        .field.full {
+            grid-column: 1 / -1;
+        }
+
+        .field label {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .field input,
+        .field select {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px solid rgba(77, 58, 39, 0.12);
+            background: rgba(255, 255, 255, 0.85);
+            color: var(--text);
+            font: inherit;
+        }
+
+        .field input:focus,
+        .field select:focus {
+            outline: 2px solid rgba(53, 109, 67, 0.18);
+            border-color: rgba(53, 109, 67, 0.28);
+        }
+
+        .input-with-unit {
             position: relative;
-            min-height: 320px;
+        }
+
+        .input-with-unit span {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            font-size: 13px;
+            pointer-events: none;
+        }
+
+        .input-with-unit input {
+            padding-right: 44px;
+        }
+
+        .form-submit {
+            margin-top: 8px;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #49a35f;
+            box-shadow: 0 0 0 0 rgba(73, 163, 95, 0.5);
+            animation: pulse 1.8s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(73, 163, 95, 0.45);
+            }
+            70% {
+                box-shadow: 0 0 0 12px rgba(73, 163, 95, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(73, 163, 95, 0);
+            }
+        }
+
+        @media (max-width: 980px) {
+            .hero,
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .span-7,
+            .span-5 {
+                grid-column: auto;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .page {
+                padding: 20px 12px 36px;
+            }
+
+            .hero-card,
+            .overview-card,
+            .content-card {
+                padding: 18px;
+            }
+
+            .hero-copy {
+                font-size: 14px;
+                line-height: 1.6;
+            }
+
+            .hero-meta,
+            .mode-actions,
+            .device-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .mode-actions a,
+            .device-actions a,
+            .device-state,
+            button {
+                width: 100%;
+            }
+
+            .pill {
+                width: 100%;
+                justify-content: space-between;
+                border-radius: 18px;
+            }
+
+            .sensor-grid,
+            .status-summary,
+            .settings-form,
+            .mini-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .sensor-tile,
+            .summary-box,
+            .mini-stat {
+                border-radius: 18px;
+            }
+
+            .chart-wrap {
+                height: 280px;
+                padding: 10px 4px 2px;
+            }
+
+            .device-row {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .device-info {
+                width: 100%;
+            }
+
+            .device-actions {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 28px;
+            }
+
+            .eyebrow {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .hero-card,
+            .overview-card,
+            .content-card {
+                padding: 16px;
+            }
+
+            .card-head p,
+            .overview-subtitle,
+            .sensor-caption,
+            .device-desc {
+                font-size: 12px;
+            }
+
+            .sensor-value {
+                font-size: 30px;
+            }
+
+            .mini-stat-value,
+            .summary-box strong {
+                font-size: 22px;
+            }
+
+            .device-icon {
+                width: 40px;
+                height: 40px;
+            }
         }
     </style>
 </head>
 <body>
-<div class="wrap">
-    <h1>화분 생장 환경 모니터링 시스템</h1>
-
-    <div class="card">
-        <h2 id="plantName">{{ config.plant_name }}</h2>
-        <p>측정 시간: <strong id="measuredAt">{{ sensor.measured_at }}</strong></p>
-        <p>센서 모드: <strong id="sensorMode">{{ sensor.mode }}</strong></p>
-        <p>제어 모드: <strong id="controlMode">{{ device_state.control_mode }}</strong></p>
-
-        <a class="btn" href="/mode/auto">자동 모드</a>
-        <a class="btn off" href="/mode/manual">수동 모드</a>
-    </div>
-
-    <div class="card">
-        <h2>현재 센서값</h2>
-        <div class="grid">
-            <div class="sensor-box">
-                <p>온도</p>
-                <div class="value" id="temperatureValue">
-                    {% if sensor.temperature is not none %}
-                        {{ sensor.temperature }}°C
-                    {% else %}
-                        오류
-                    {% endif %}
+    <main class="page">
+        <section class="hero">
+            <div class="panel hero-card">
+                <div class="eyebrow">
+                    <span class="live-dot"></span>
+                    실시간 식물 케어 대시보드
+                </div>
+                <h1 id="plantName">{{ config.plant_name }}</h1>
+                <p class="hero-copy">
+                    센서 상태를 계속 관찰하고, 기준을 벗어나면 자동으로 반응하는 스마트 화분 모니터링 화면입니다.
+                    지금 상태와 최근 흐름, 장치 제어를 한 번에 확인할 수 있습니다.
+                </p>
+                <div class="hero-meta">
+                    <div class="pill">측정 시간 <strong id="measuredAt">{{ sensor.measured_at }}</strong></div>
+                    <div class="pill">센서 모드 <strong id="sensorMode">{{ sensor.mode }}</strong></div>
+                    <div class="pill">제어 모드 <strong id="controlMode">{{ device_state.control_mode }}</strong></div>
+                </div>
+                <div class="mode-actions">
+                    <a class="btn-primary" href="/mode/auto">자동 모드</a>
+                    <a class="btn-secondary" href="/mode/manual">수동 모드</a>
                 </div>
             </div>
 
-            <div class="sensor-box">
-                <p>습도</p>
-                <div class="value" id="humidityValue">
-                    {% if sensor.humidity is not none %}
-                        {{ sensor.humidity }}%
-                    {% else %}
-                        오류
-                    {% endif %}
+            <aside class="panel overview-card">
+                <h2>오늘의 요약</h2>
+                <p class="overview-subtitle">현재 환경과 자동 제어 기준을 빠르게 확인할 수 있습니다.</p>
+                <div class="mini-stats">
+                    <div class="mini-stat">
+                        <span class="mini-stat-label">비정상 항목</span>
+                        <div class="mini-stat-value" id="abnormalCount">{{ abnormal|length }}개</div>
+                    </div>
+                    <div class="mini-stat">
+                        <span class="mini-stat-label">지속 시간</span>
+                        <div class="mini-stat-value" id="abnormalDuration">{{ abnormal_duration }}초</div>
+                    </div>
+                    <div class="mini-stat">
+                        <span class="mini-stat-label">기준 조도</span>
+                        <div class="mini-stat-value">{{ "밝음" if config.light_required == "bright" else "어두움" }}</div>
+                    </div>
+                    <div class="mini-stat">
+                        <span class="mini-stat-label">경보 기준</span>
+                        <div class="mini-stat-value">{{ abnormal_required }}초</div>
+                    </div>
+                </div>
+            </aside>
+        </section>
+
+        <section class="dashboard-grid">
+            <div class="panel content-card full-span">
+                <div class="card-head">
+                    <div>
+                        <h2 class="section-title">현재 센서값</h2>
+                        <p>실시간 측정값을 카드 형태로 정리했습니다. 값이 바뀌면 페이지 새로고침 없이 자연스럽게 반영됩니다.</p>
+                    </div>
+                </div>
+
+                <div class="sensor-grid">
+                    <article class="sensor-tile">
+                        <div class="sensor-label">
+                            <span>온도</span>
+                            <span class="sensor-badge">온</span>
+                        </div>
+                        <div class="sensor-value" id="temperatureValue">
+                            {% if sensor.temperature is not none %}
+                                {{ sensor.temperature }}°C
+                            {% else %}
+                                오류
+                            {% endif %}
+                        </div>
+                        <div class="sensor-caption">생장 환경의 열 상태</div>
+                    </article>
+
+                    <article class="sensor-tile">
+                        <div class="sensor-label">
+                            <span>습도</span>
+                            <span class="sensor-badge">습</span>
+                        </div>
+                        <div class="sensor-value" id="humidityValue">
+                            {% if sensor.humidity is not none %}
+                                {{ sensor.humidity }}%
+                            {% else %}
+                                오류
+                            {% endif %}
+                        </div>
+                        <div class="sensor-caption">수분 유지 수준</div>
+                    </article>
+
+                    <article class="sensor-tile">
+                        <div class="sensor-label">
+                            <span>조도</span>
+                            <span class="sensor-badge">빛</span>
+                        </div>
+                        <div class="sensor-value" id="lightValue">
+                            {% if sensor.light == "bright" %}
+                                밝음
+                            {% elif sensor.light == "dark" %}
+                                어두움
+                            {% else %}
+                                오류
+                            {% endif %}
+                        </div>
+                        <div class="sensor-caption">빛 노출 상태</div>
+                    </article>
                 </div>
             </div>
 
-            <div class="sensor-box">
-                <p>조도</p>
-                <div class="value" id="lightValue">
-                    {% if sensor.light == "bright" %}
-                        밝음
-                    {% elif sensor.light == "dark" %}
-                        어두움
-                    {% else %}
-                        오류
-                    {% endif %}
+            <div class="panel content-card span-7">
+                <div class="card-head">
+                    <div>
+                        <h2 class="section-title">최근 센서 추이</h2>
+                        <p>최근 {{ history_limit }}개 측정값 기준으로 온도, 습도, 조도 변화 흐름을 보여줍니다.</p>
+                    </div>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="historyChart"></canvas>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <div class="card">
-        <h2>환경 상태</h2>
-        <div class="status-list" id="warningsBlock">
-            {% if warnings %}
-                {% for warning in warnings %}
-                    <p class="warn">{{ warning }}</p>
-                {% endfor %}
-            {% else %}
-                <p class="ok">현재 생장 환경은 정상 범위입니다.</p>
-            {% endif %}
-        </div>
+            <div class="panel content-card span-5">
+                <div class="card-head">
+                    <div>
+                        <h2 class="section-title">환경 상태</h2>
+                        <p>현재 경고와 비정상 유지 시간을 함께 확인할 수 있습니다.</p>
+                    </div>
+                </div>
 
-        <p>비정상 항목 수: <strong id="abnormalCount">{{ abnormal|length }}개</strong></p>
-        <p>비정상 지속 시간: <strong id="abnormalDuration">{{ abnormal_duration }}초</strong> / 기준 {{ abnormal_required }}초</p>
-    </div>
+                <div class="status-stack" id="warningsBlock">
+                    {% if warnings %}
+                        {% for warning in warnings %}
+                            <div class="status-note warn">{{ warning }}</div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="status-note ok">현재 생장 환경은 정상 범위입니다.</div>
+                    {% endif %}
+                </div>
 
-    <div class="card">
-        <h2>최근 센서 추이</h2>
-        <p>최근 {{ history_limit }}개 측정값을 기준으로 온도, 습도, 조도 변화를 보여줍니다.</p>
-        <div class="chart-wrap">
-            <canvas id="historyChart"></canvas>
-        </div>
-    </div>
+                <div class="status-summary">
+                    <div class="summary-box">
+                        <span>비정상 항목 수</span>
+                        <strong id="abnormalCountSecondary">{{ abnormal|length }}개</strong>
+                    </div>
+                    <div class="summary-box">
+                        <span>비정상 지속 시간</span>
+                        <strong id="abnormalDurationSecondary">{{ abnormal_duration }}초</strong>
+                    </div>
+                </div>
+            </div>
 
-    <div class="card">
-        <h2>장치 상태 및 수동 제어</h2>
+            <div class="panel content-card span-7">
+                <div class="card-head">
+                    <div>
+                        <h2 class="section-title">장치 상태 및 수동 제어</h2>
+                        <p>자동 모드 외에도 팬, 펌프, 부저를 바로 수동으로 제어할 수 있습니다.</p>
+                    </div>
+                </div>
 
-        <p class="device-line">
-            팬:
-            <span id="fanState" class="{{ 'device-on' if device_state.fan else 'device-off' }}">
-                {{ "ON" if device_state.fan else "OFF" }}
-            </span>
-            <a class="btn" href="/device/fan/on">ON</a>
-            <a class="btn off" href="/device/fan/off">OFF</a>
-        </p>
+                <div class="device-list">
+                    <div class="device-row">
+                        <div class="device-info">
+                            <div class="device-icon">팬</div>
+                            <div>
+                                <div class="device-name">팬</div>
+                                <div class="device-desc">온도가 높을 때 공기 순환을 돕습니다.</div>
+                            </div>
+                        </div>
+                        <div class="device-actions">
+                            <span id="fanState" class="device-state {{ 'device-on' if device_state.fan else 'device-off' }}">
+                                {{ "ON" if device_state.fan else "OFF" }}
+                            </span>
+                            <a class="device-btn-on" href="/device/fan/on">ON</a>
+                            <a class="device-btn-off" href="/device/fan/off">OFF</a>
+                        </div>
+                    </div>
 
-        <p class="device-line">
-            펌프:
-            <span id="pumpState" class="{{ 'device-on' if device_state.pump else 'device-off' }}">
-                {{ "ON" if device_state.pump else "OFF" }}
-            </span>
-            <a class="btn" href="/device/pump/on">ON</a>
-            <a class="btn off" href="/device/pump/off">OFF</a>
-        </p>
+                    <div class="device-row">
+                        <div class="device-info">
+                            <div class="device-icon">물</div>
+                            <div>
+                                <div class="device-name">펌프</div>
+                                <div class="device-desc">습도가 낮을 때 물 공급을 보조합니다.</div>
+                            </div>
+                        </div>
+                        <div class="device-actions">
+                            <span id="pumpState" class="device-state {{ 'device-on' if device_state.pump else 'device-off' }}">
+                                {{ "ON" if device_state.pump else "OFF" }}
+                            </span>
+                            <a class="device-btn-on" href="/device/pump/on">ON</a>
+                            <a class="device-btn-off" href="/device/pump/off">OFF</a>
+                        </div>
+                    </div>
 
-        <p class="device-line">
-            부저:
-            <span id="buzzerState" class="{{ 'device-on' if device_state.buzzer else 'device-off' }}">
-                {{ "ON" if device_state.buzzer else "OFF" }}
-            </span>
-            <a class="btn danger" href="/device/buzzer/on">ON</a>
-            <a class="btn off" href="/device/buzzer/off">OFF</a>
-        </p>
-    </div>
+                    <div class="device-row">
+                        <div class="device-info">
+                            <div class="device-icon">경</div>
+                            <div>
+                                <div class="device-name">부저</div>
+                                <div class="device-desc">비정상 상태가 지속될 때 경고를 울립니다.</div>
+                            </div>
+                        </div>
+                        <div class="device-actions">
+                            <span id="buzzerState" class="device-state {{ 'device-on' if device_state.buzzer else 'device-off' }}">
+                                {{ "ON" if device_state.buzzer else "OFF" }}
+                            </span>
+                            <a class="device-btn-danger" href="/device/buzzer/on">ON</a>
+                            <a class="device-btn-off" href="/device/buzzer/off">OFF</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    <div class="card">
-        <h2>생장 환경 기준값 설정</h2>
+            <div class="panel content-card span-5">
+                <div class="card-head">
+                    <div>
+                        <h2 class="section-title">생장 환경 기준값 설정</h2>
+                        <p>식물 이름과 임계값을 바꾸면 자동 제어와 경고 기준에 바로 반영됩니다.</p>
+                    </div>
+                </div>
 
-        <form action="/config" method="post">
-            <p>
-                <label>식물 이름</label>
-                <input type="text" name="plant_name" value="{{ config.plant_name }}">
-            </p>
+                <form action="/config" method="post" class="settings-form">
+                    <div class="field full">
+                        <label for="plant_name">식물 이름</label>
+                        <input id="plant_name" type="text" name="plant_name" value="{{ config.plant_name }}">
+                    </div>
 
-            <p>
-                <label>최소 온도</label>
-                <input type="number" step="0.1" name="min_temp" value="{{ config.min_temp }}"> °C
-            </p>
+                    <div class="field">
+                        <label for="min_temp">최소 온도</label>
+                        <div class="input-with-unit">
+                            <input id="min_temp" type="number" step="0.1" name="min_temp" value="{{ config.min_temp }}">
+                            <span>°C</span>
+                        </div>
+                    </div>
 
-            <p>
-                <label>최대 온도</label>
-                <input type="number" step="0.1" name="max_temp" value="{{ config.max_temp }}"> °C
-            </p>
+                    <div class="field">
+                        <label for="max_temp">최대 온도</label>
+                        <div class="input-with-unit">
+                            <input id="max_temp" type="number" step="0.1" name="max_temp" value="{{ config.max_temp }}">
+                            <span>°C</span>
+                        </div>
+                    </div>
 
-            <p>
-                <label>최소 습도</label>
-                <input type="number" step="0.1" name="min_humidity" value="{{ config.min_humidity }}"> %
-            </p>
+                    <div class="field">
+                        <label for="min_humidity">최소 습도</label>
+                        <div class="input-with-unit">
+                            <input id="min_humidity" type="number" step="0.1" name="min_humidity" value="{{ config.min_humidity }}">
+                            <span>%</span>
+                        </div>
+                    </div>
 
-            <p>
-                <label>최대 습도</label>
-                <input type="number" step="0.1" name="max_humidity" value="{{ config.max_humidity }}"> %
-            </p>
+                    <div class="field">
+                        <label for="max_humidity">최대 습도</label>
+                        <div class="input-with-unit">
+                            <input id="max_humidity" type="number" step="0.1" name="max_humidity" value="{{ config.max_humidity }}">
+                            <span>%</span>
+                        </div>
+                    </div>
 
-            <p>
-                <label>필요 조도</label>
-                <select name="light_required">
-                    <option value="bright" {% if config.light_required == "bright" %}selected{% endif %}>밝음</option>
-                    <option value="dark" {% if config.light_required == "dark" %}selected{% endif %}>어두움</option>
-                </select>
-            </p>
+                    <div class="field full">
+                        <label for="light_required">필요 조도</label>
+                        <select id="light_required" name="light_required">
+                            <option value="bright" {% if config.light_required == "bright" %}selected{% endif %}>밝음</option>
+                            <option value="dark" {% if config.light_required == "dark" %}selected{% endif %}>어두움</option>
+                        </select>
+                    </div>
 
-            <button type="submit">저장</button>
-        </form>
-    </div>
-</div>
-<script>
-    const historyLimit = {{ history_limit }};
-    let historyChart = null;
+                    <div class="field full form-submit">
+                        <button type="submit" class="btn-primary">설정 저장</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+    </main>
 
-    function formatTemperature(value) {
-        return value === null ? "오류" : `${value}°C`;
-    }
+    <script>
+        const historyLimit = {{ history_limit }};
+        let historyChart = null;
 
-    function formatHumidity(value) {
-        return value === null ? "오류" : `${value}%`;
-    }
-
-    function formatLight(value) {
-        if (value === "bright") return "밝음";
-        if (value === "dark") return "어두움";
-        return "오류";
-    }
-
-    function setDeviceState(elementId, isOn) {
-        const element = document.getElementById(elementId);
-        element.textContent = isOn ? "ON" : "OFF";
-        element.className = isOn ? "device-on" : "device-off";
-    }
-
-    function renderWarnings(warnings) {
-        const container = document.getElementById("warningsBlock");
-        if (!warnings.length) {
-            container.innerHTML = '<p class="ok">현재 생장 환경은 정상 범위입니다.</p>';
-            return;
+        function formatTemperature(value) {
+            return value === null ? "오류" : `${value}°C`;
         }
 
-        container.innerHTML = warnings
-            .map((warning) => `<p class="warn">${warning}</p>`)
-            .join("");
-    }
+        function formatHumidity(value) {
+            return value === null ? "오류" : `${value}%`;
+        }
 
-    function buildChart(history) {
-        const ctx = document.getElementById("historyChart");
-        const labels = history.map((item) => item.measured_at.slice(11));
-        const temperatureData = history.map((item) => item.temperature);
-        const humidityData = history.map((item) => item.humidity);
-        const lightData = history.map((item) => {
-            if (item.light === "bright") return 1;
-            if (item.light === "dark") return 0;
-            return null;
-        });
+        function formatLight(value) {
+            if (value === "bright") return "밝음";
+            if (value === "dark") return "어두움";
+            return "오류";
+        }
 
-        historyChart = new Chart(ctx, {
-            type: "line",
-            data: {
-                labels,
-                datasets: [
-                    {
-                        label: "온도 (°C)",
-                        data: temperatureData,
-                        borderColor: "#d35400",
-                        backgroundColor: "rgba(211, 84, 0, 0.15)",
-                        tension: 0.25,
-                        spanGaps: true
-                    },
-                    {
-                        label: "습도 (%)",
-                        data: humidityData,
-                        borderColor: "#1f78b4",
-                        backgroundColor: "rgba(31, 120, 180, 0.15)",
-                        tension: 0.25,
-                        spanGaps: true
-                    },
-                    {
-                        label: "조도",
-                        data: lightData,
-                        borderColor: "#2e7d32",
-                        backgroundColor: "rgba(46, 125, 50, 0.1)",
-                        stepped: true,
-                        spanGaps: true,
-                        yAxisID: "yLight"
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 500
+        function setDeviceState(elementId, isOn) {
+            const element = document.getElementById(elementId);
+            element.textContent = isOn ? "ON" : "OFF";
+            element.className = `device-state ${isOn ? "device-on" : "device-off"}`;
+        }
+
+        function renderWarnings(warnings) {
+            const container = document.getElementById("warningsBlock");
+            if (!warnings.length) {
+                container.innerHTML = '<div class="status-note ok">현재 생장 환경은 정상 범위입니다.</div>';
+                return;
+            }
+
+            container.innerHTML = warnings
+                .map((warning) => `<div class="status-note warn">${warning}</div>`)
+                .join("");
+        }
+
+        function buildChart(history) {
+            const ctx = document.getElementById("historyChart");
+            const labels = history.map((item) => item.measured_at.slice(11));
+            const temperatureData = history.map((item) => item.temperature);
+            const humidityData = history.map((item) => item.humidity);
+            const lightData = history.map((item) => {
+                if (item.light === "bright") return 1;
+                if (item.light === "dark") return 0;
+                return null;
+            });
+
+            historyChart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: "온도 (°C)",
+                            data: temperatureData,
+                            borderColor: "#c96b27",
+                            backgroundColor: "rgba(201, 107, 39, 0.12)",
+                            pointRadius: 2.5,
+                            pointHoverRadius: 4,
+                            borderWidth: 2.5,
+                            tension: 0.3,
+                            fill: false,
+                            spanGaps: true
+                        },
+                        {
+                            label: "습도 (%)",
+                            data: humidityData,
+                            borderColor: "#3f80b1",
+                            backgroundColor: "rgba(63, 128, 177, 0.12)",
+                            pointRadius: 2.5,
+                            pointHoverRadius: 4,
+                            borderWidth: 2.5,
+                            tension: 0.3,
+                            fill: false,
+                            spanGaps: true
+                        },
+                        {
+                            label: "조도",
+                            data: lightData,
+                            borderColor: "#4f8e5b",
+                            backgroundColor: "rgba(79, 142, 91, 0.1)",
+                            borderWidth: 2,
+                            stepped: true,
+                            pointRadius: 0,
+                            spanGaps: true,
+                            yAxisID: "yLight"
+                        }
+                    ]
                 },
-                interaction: {
-                    mode: "index",
-                    intersect: false
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: "온도 / 습도"
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 500
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                usePointStyle: true,
+                                boxWidth: 8,
+                                color: "#4b3928",
+                                font: {
+                                    size: 12,
+                                    weight: "600"
+                                }
+                            }
                         }
                     },
-                    yLight: {
-                        position: "right",
-                        min: 0,
-                        max: 1,
-                        grid: {
-                            drawOnChartArea: false
+                    interaction: {
+                        mode: "index",
+                        intersect: false
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: "rgba(77, 58, 39, 0.06)"
+                            },
+                            ticks: {
+                                color: "#7a6650"
+                            }
                         },
-                        ticks: {
-                            stepSize: 1,
-                            callback(value) {
-                                return value === 1 ? "밝음" : "어두움";
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: "rgba(77, 58, 39, 0.06)"
+                            },
+                            ticks: {
+                                color: "#7a6650"
+                            },
+                            title: {
+                                display: true,
+                                text: "온도 / 습도",
+                                color: "#7a6650"
+                            }
+                        },
+                        yLight: {
+                            position: "right",
+                            min: 0,
+                            max: 1,
+                            grid: {
+                                drawOnChartArea: false
+                            },
+                            ticks: {
+                                stepSize: 1,
+                                color: "#7a6650",
+                                callback(value) {
+                                    return value === 1 ? "밝음" : "어두움";
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
-    }
-
-    function updateChart(history) {
-        const labels = history.map((item) => item.measured_at.slice(11));
-        historyChart.data.labels = labels;
-        historyChart.data.datasets[0].data = history.map((item) => item.temperature);
-        historyChart.data.datasets[1].data = history.map((item) => item.humidity);
-        historyChart.data.datasets[2].data = history.map((item) => {
-            if (item.light === "bright") return 1;
-            if (item.light === "dark") return 0;
-            return null;
-        });
-        historyChart.update();
-    }
-
-    function updateStatus(status) {
-        document.getElementById("plantName").textContent = status.config.plant_name;
-        document.getElementById("measuredAt").textContent = status.sensor.measured_at;
-        document.getElementById("sensorMode").textContent = status.sensor.mode;
-        document.getElementById("controlMode").textContent = status.device_state.control_mode;
-        document.getElementById("temperatureValue").textContent = formatTemperature(status.sensor.temperature);
-        document.getElementById("humidityValue").textContent = formatHumidity(status.sensor.humidity);
-        document.getElementById("lightValue").textContent = formatLight(status.sensor.light);
-        document.getElementById("abnormalCount").textContent = `${status.abnormal.length}개`;
-        document.getElementById("abnormalDuration").textContent = `${status.abnormal_duration}초`;
-        renderWarnings(status.warnings);
-        setDeviceState("fanState", status.device_state.fan);
-        setDeviceState("pumpState", status.device_state.pump);
-        setDeviceState("buzzerState", status.device_state.buzzer);
-    }
-
-    async function refreshDashboard() {
-        try {
-            const [statusResponse, historyResponse] = await Promise.all([
-                fetch("/api/status"),
-                fetch(`/api/history?limit=${historyLimit}`)
-            ]);
-
-            const statusPayload = await statusResponse.json();
-            const historyPayload = await historyResponse.json();
-
-            updateStatus(statusPayload);
-
-            if (!historyChart) {
-                buildChart(historyPayload.history || []);
-            } else {
-                updateChart(historyPayload.history || []);
-            }
-        } catch (error) {
-            console.error("대시보드 갱신 실패:", error);
+            });
         }
-    }
 
-    refreshDashboard();
-    setInterval(refreshDashboard, 5000);
-</script>
+        function updateChart(history) {
+            const labels = history.map((item) => item.measured_at.slice(11));
+            historyChart.data.labels = labels;
+            historyChart.data.datasets[0].data = history.map((item) => item.temperature);
+            historyChart.data.datasets[1].data = history.map((item) => item.humidity);
+            historyChart.data.datasets[2].data = history.map((item) => {
+                if (item.light === "bright") return 1;
+                if (item.light === "dark") return 0;
+                return null;
+            });
+            historyChart.update();
+        }
+
+        function updateStatus(status) {
+            const abnormalCountText = `${status.abnormal.length}개`;
+            const abnormalDurationText = `${status.abnormal_duration}초`;
+
+            document.getElementById("plantName").textContent = status.config.plant_name;
+            document.getElementById("measuredAt").textContent = status.sensor.measured_at;
+            document.getElementById("sensorMode").textContent = status.sensor.mode;
+            document.getElementById("controlMode").textContent = status.device_state.control_mode;
+            document.getElementById("temperatureValue").textContent = formatTemperature(status.sensor.temperature);
+            document.getElementById("humidityValue").textContent = formatHumidity(status.sensor.humidity);
+            document.getElementById("lightValue").textContent = formatLight(status.sensor.light);
+            document.getElementById("abnormalCount").textContent = abnormalCountText;
+            document.getElementById("abnormalDuration").textContent = abnormalDurationText;
+            document.getElementById("abnormalCountSecondary").textContent = abnormalCountText;
+            document.getElementById("abnormalDurationSecondary").textContent = abnormalDurationText;
+            renderWarnings(status.warnings);
+            setDeviceState("fanState", status.device_state.fan);
+            setDeviceState("pumpState", status.device_state.pump);
+            setDeviceState("buzzerState", status.device_state.buzzer);
+        }
+
+        async function refreshDashboard() {
+            try {
+                const [statusResponse, historyResponse] = await Promise.all([
+                    fetch("/api/status"),
+                    fetch(`/api/history?limit=${historyLimit}`)
+                ]);
+
+                const statusPayload = await statusResponse.json();
+                const historyPayload = await historyResponse.json();
+
+                updateStatus(statusPayload);
+
+                if (!historyChart) {
+                    buildChart(historyPayload.history || []);
+                } else {
+                    updateChart(historyPayload.history || []);
+                }
+            } catch (error) {
+                console.error("대시보드 갱신 실패:", error);
+            }
+        }
+
+        refreshDashboard();
+        setInterval(refreshDashboard, 5000);
+    </script>
 </body>
 </html>
