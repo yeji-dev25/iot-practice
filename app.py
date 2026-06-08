@@ -34,12 +34,21 @@ def load_config():
         save_config(DEFAULT_PLANT_CONFIG)
 
     with open(CONFIG_FILE, "r", encoding="utf-8") as file:
-        return json.load(file)
+        config = json.load(file)
+
+    return ensure_config_defaults(config)
+
+
+def ensure_config_defaults(config):
+    merged = DEFAULT_PLANT_CONFIG.copy()
+    merged.update(config)
+    return merged
 
 
 def save_config(config):
+    normalized_config = ensure_config_defaults(config)
     with open(CONFIG_FILE, "w", encoding="utf-8") as file:
-        json.dump(config, file, ensure_ascii=False, indent=2)
+        json.dump(normalized_config, file, ensure_ascii=False, indent=2)
 
 
 def ensure_history_file():
@@ -159,6 +168,7 @@ def apply_auto_control(sensor, config, abnormal):
     global abnormal_start_time
 
     now = datetime.now()
+    abnormal_required = int(config["abnormal_duration_seconds"])
 
     if len(abnormal) >= 2:
         if abnormal_start_time is None:
@@ -173,7 +183,7 @@ def apply_auto_control(sensor, config, abnormal):
     if device_state["control_mode"] == "auto":
         fan_on = sensor["temperature"] is not None and float(sensor["temperature"]) > float(config["max_temp"])
         pump_on = sensor["humidity"] is not None and float(sensor["humidity"]) < float(config["min_humidity"])
-        buzzer_on = len(abnormal) >= 2 and abnormal_duration >= ABNORMAL_DURATION_SECONDS
+        buzzer_on = len(abnormal) >= 2 and abnormal_duration >= abnormal_required
 
         previous_fan = device_state["fan"]
         previous_pump = device_state["pump"]
@@ -218,7 +228,8 @@ def apply_auto_control(sensor, config, abnormal):
                 (
                     "비정상 생장 환경이 지속되어 부저가 작동했습니다.\n\n"
                     f"비정상 항목 수: {len(abnormal)}개\n"
-                    f"지속 시간: {int(abnormal_duration)}초"
+                    f"지속 시간: {int(abnormal_duration)}초\n"
+                    f"경보 기준: {abnormal_required}초"
                 ),
             )
 
@@ -253,7 +264,7 @@ def index():
         abnormal=abnormal,
         warnings=warnings,
         abnormal_duration=int(abnormal_duration),
-        abnormal_required=ABNORMAL_DURATION_SECONDS,
+        abnormal_required=int(config["abnormal_duration_seconds"]),
         device_state=device_state,
         history_limit=HISTORY_API_LIMIT,
     )
@@ -268,6 +279,7 @@ def update_config():
         "min_humidity": float(request.form.get("min_humidity", 40)),
         "max_humidity": float(request.form.get("max_humidity", 70)),
         "light_required": request.form.get("light_required", "bright"),
+        "abnormal_duration_seconds": int(request.form.get("abnormal_duration_seconds", ABNORMAL_DURATION_SECONDS)),
     }
 
     save_config(config)

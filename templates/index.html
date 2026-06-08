@@ -525,7 +525,7 @@
         }
 
         .input-with-unit input {
-            padding-right: 44px;
+            padding-right: 52px;
         }
 
         .form-submit {
@@ -714,7 +714,7 @@
                     </div>
                     <div class="mini-stat">
                         <span class="mini-stat-label">경보 기준</span>
-                        <div class="mini-stat-value">{{ abnormal_required }}초</div>
+                        <div class="mini-stat-value" id="abnormalRequired">{{ abnormal_required }}초</div>
                     </div>
                 </div>
             </aside>
@@ -929,12 +929,20 @@
                         </div>
                     </div>
 
-                    <div class="field full">
+                    <div class="field">
                         <label for="light_required">필요 조도</label>
                         <select id="light_required" name="light_required">
                             <option value="bright" {% if config.light_required == "bright" %}selected{% endif %}>밝음</option>
                             <option value="dark" {% if config.light_required == "dark" %}selected{% endif %}>어두움</option>
                         </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="abnormal_duration_seconds">경보 기준 시간</label>
+                        <div class="input-with-unit">
+                            <input id="abnormal_duration_seconds" type="number" min="1" step="1" name="abnormal_duration_seconds" value="{{ abnormal_required }}">
+                            <span>초</span>
+                        </div>
                     </div>
 
                     <div class="field full form-submit">
@@ -1116,6 +1124,7 @@
         function updateStatus(status) {
             const abnormalCountText = `${status.abnormal.length}개`;
             const abnormalDurationText = `${status.abnormal_duration}초`;
+            const abnormalRequiredText = `${status.config.abnormal_duration_seconds}초`;
 
             document.getElementById("plantName").textContent = status.config.plant_name;
             document.getElementById("measuredAt").textContent = status.sensor.measured_at;
@@ -1126,6 +1135,7 @@
             document.getElementById("lightValue").textContent = formatLight(status.sensor.light);
             document.getElementById("abnormalCount").textContent = abnormalCountText;
             document.getElementById("abnormalDuration").textContent = abnormalDurationText;
+            document.getElementById("abnormalRequired").textContent = abnormalRequiredText;
             document.getElementById("abnormalCountSecondary").textContent = abnormalCountText;
             document.getElementById("abnormalDurationSecondary").textContent = abnormalDurationText;
             renderWarnings(status.warnings);

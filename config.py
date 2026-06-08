@@ -2,8 +2,6 @@ import os
 
 from dotenv import load_dotenv
 
-# config.py
-
 load_dotenv()
 
 # "mock"이면 가짜 센서값 사용
@@ -25,8 +23,7 @@ BUZZER_PIN = 23
 # 장치가 반대로 동작하면 True/False 바꾸기
 RELAY_ACTIVE_LOW = True
 
-# 시연용: 원래는 3600초 = 1시간
-# 오늘/내일 테스트는 30초 또는 60초 추천
+# 기본 부저 경보 기준 시간
 ABNORMAL_DURATION_SECONDS = 60
 
 DEFAULT_PLANT_CONFIG = {
@@ -35,8 +32,10 @@ DEFAULT_PLANT_CONFIG = {
     "max_temp": 28,
     "min_humidity": 40,
     "max_humidity": 70,
-    "light_required": "bright"
+    "light_required": "bright",
+    "abnormal_duration_seconds": ABNORMAL_DURATION_SECONDS,
 }
+
 # Email Notification
 EMAIL_ENABLED = True
 
