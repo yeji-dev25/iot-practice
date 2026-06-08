@@ -20,3 +20,7 @@ ENV/
 Thumbs.db
 
 *.log
+
+.env
+.env.*
+sensor_history.csv

@@ -1,4 +1,10 @@
+import os
+
+from dotenv import load_dotenv
+
 # config.py
+
+load_dotenv()
 
 # "mock"이면 가짜 센서값 사용
 # "real"이면 실제 라즈베리파이 GPIO 사용
@@ -21,7 +27,7 @@ RELAY_ACTIVE_LOW = True
 
 # 시연용: 원래는 3600초 = 1시간
 # 오늘/내일 테스트는 30초 또는 60초 추천
-ABNORMAL_DURATION_SECONDS = 30
+ABNORMAL_DURATION_SECONDS = 5
 
 DEFAULT_PLANT_CONFIG = {
     "plant_name": "바질",
@@ -31,3 +37,15 @@ DEFAULT_PLANT_CONFIG = {
     "max_humidity": 70,
     "light_required": "bright"
 }
+# Email Notification
+EMAIL_ENABLED = True
+
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+EMAIL_SENDER = "jyjjj0329@gachon.ac.kr"
+EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD", "")
+
+EMAIL_RECEIVER = "jyjjj0329@gachon.ac.kr"
+
+NOTIFICATION_COOLDOWN_SECONDS = 60

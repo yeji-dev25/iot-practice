@@ -1,3 +1,4 @@
 flask
 gpiozero
 adafruit-circuitpython-dht
+python-dotenv

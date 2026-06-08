@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>화분 생장 환경 모니터링</title>
     <meta http-equiv="refresh" content="5">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -19,7 +20,7 @@
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 18px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         }
         .grid {
             display: grid;
@@ -78,6 +79,10 @@
             display: inline-block;
             width: 120px;
         }
+        .chart-wrap {
+            position: relative;
+            min-height: 320px;
+        }
     </style>
 </head>
 <body>
@@ -101,7 +106,7 @@
                 <p>온도</p>
                 <div class="value">
                     {% if sensor.temperature is not none %}
-                        {{ sensor.temperature }}℃
+                        {{ sensor.temperature }}°C
                     {% else %}
                         오류
                     {% endif %}
@@ -142,7 +147,7 @@
                 <p class="warn">{{ warning }}</p>
             {% endfor %}
         {% else %}
-            <p class="ok">현재 생장 환경이 정상 범위입니다.</p>
+            <p class="ok">현재 생장 환경은 정상 범위입니다.</p>
         {% endif %}
 
         <p>비정상 항목 수: <strong>{{ abnormal|length }}개</strong></p>
@@ -150,10 +155,18 @@
     </div>
 
     <div class="card">
+        <h2>최근 센서 추이</h2>
+        <p>최근 {{ history_limit }}개 측정값을 기준으로 온도, 습도, 조도 변화를 보여줍니다.</p>
+        <div class="chart-wrap">
+            <canvas id="historyChart"></canvas>
+        </div>
+    </div>
+
+    <div class="card">
         <h2>장치 상태 및 수동 제어</h2>
 
         <p>
-            쿨링팬:
+            팬:
             <span class="{{ 'device-on' if device_state.fan else 'device-off' }}">
                 {{ "ON" if device_state.fan else "OFF" }}
             </span>
@@ -162,7 +175,7 @@
         </p>
 
         <p>
-            미니펌프:
+            펌프:
             <span class="{{ 'device-on' if device_state.pump else 'device-off' }}">
                 {{ "ON" if device_state.pump else "OFF" }}
             </span>
@@ -191,12 +204,12 @@
 
             <p>
                 <label>최소 온도</label>
-                <input type="number" step="0.1" name="min_temp" value="{{ config.min_temp }}"> ℃
+                <input type="number" step="0.1" name="min_temp" value="{{ config.min_temp }}"> °C
             </p>
 
             <p>
                 <label>최대 온도</label>
-                <input type="number" step="0.1" name="max_temp" value="{{ config.max_temp }}"> ℃
+                <input type="number" step="0.1" name="max_temp" value="{{ config.max_temp }}"> °C
             </p>
 
             <p>
@@ -221,5 +234,90 @@
         </form>
     </div>
 </div>
+<script>
+    async function loadHistoryChart() {
+        const response = await fetch("/api/history?limit={{ history_limit }}");
+        const payload = await response.json();
+        const history = payload.history || [];
+
+        const labels = history.map((item) => item.measured_at.slice(11));
+        const temperatureData = history.map((item) => item.temperature);
+        const humidityData = history.map((item) => item.humidity);
+        const lightData = history.map((item) => {
+            if (item.light === "bright") return 1;
+            if (item.light === "dark") return 0;
+            return null;
+        });
+
+        const ctx = document.getElementById("historyChart");
+
+        new Chart(ctx, {
+            type: "line",
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: "온도 (°C)",
+                        data: temperatureData,
+                        borderColor: "#d35400",
+                        backgroundColor: "rgba(211, 84, 0, 0.15)",
+                        tension: 0.25,
+                        spanGaps: true
+                    },
+                    {
+                        label: "습도 (%)",
+                        data: humidityData,
+                        borderColor: "#1f78b4",
+                        backgroundColor: "rgba(31, 120, 180, 0.15)",
+                        tension: 0.25,
+                        spanGaps: true
+                    },
+                    {
+                        label: "조도",
+                        data: lightData,
+                        borderColor: "#2e7d32",
+                        backgroundColor: "rgba(46, 125, 50, 0.1)",
+                        stepped: true,
+                        spanGaps: true,
+                        yAxisID: "yLight"
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: "index",
+                    intersect: false
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: "온도 / 습도"
+                        }
+                    },
+                    yLight: {
+                        position: "right",
+                        min: 0,
+                        max: 1,
+                        grid: {
+                            drawOnChartArea: false
+                        },
+                        ticks: {
+                            stepSize: 1,
+                            callback(value) {
+                                return value === 1 ? "밝음" : "어두움";
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    loadHistoryChart();
+</script>
 </body>
 </html>

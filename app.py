@@ -1,22 +1,26 @@
-# app.py
-
-from flask import Flask, render_template, request, redirect, jsonify
+import csv
 import json
 import os
 from datetime import datetime
 
-from config import DEFAULT_PLANT_CONFIG, ABNORMAL_DURATION_SECONDS
-from hardware import setup_hardware, read_sensor, set_fan, set_pump, set_buzzer
+from flask import Flask, jsonify, redirect, render_template, request
+
+from config import ABNORMAL_DURATION_SECONDS, DEFAULT_PLANT_CONFIG
+from hardware import read_sensor, set_buzzer, set_fan, set_pump, setup_hardware
+from notifier import send_notification_once
 
 app = Flask(__name__)
 
 CONFIG_FILE = "plant_config.json"
+HISTORY_FILE = "sensor_history.csv"
+MAX_HISTORY_ROWS = 500
+HISTORY_API_LIMIT = 30
 
 device_state = {
     "fan": False,
     "pump": False,
     "buzzer": False,
-    "control_mode": "auto"
+    "control_mode": "auto",
 }
 
 abnormal_start_time = None
@@ -29,13 +33,95 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         save_config(DEFAULT_PLANT_CONFIG)
 
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    with open(CONFIG_FILE, "r", encoding="utf-8") as file:
+        return json.load(file)
 
 
 def save_config(config):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    with open(CONFIG_FILE, "w", encoding="utf-8") as file:
+        json.dump(config, file, ensure_ascii=False, indent=2)
+
+
+def ensure_history_file():
+    if os.path.exists(HISTORY_FILE):
+        return
+
+    with open(HISTORY_FILE, "w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=["measured_at", "temperature", "humidity", "light", "mode"],
+        )
+        writer.writeheader()
+
+
+def append_sensor_history(sensor):
+    ensure_history_file()
+
+    with open(HISTORY_FILE, "a", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=["measured_at", "temperature", "humidity", "light", "mode"],
+        )
+        writer.writerow(
+            {
+                "measured_at": sensor.get("measured_at", ""),
+                "temperature": sensor.get("temperature", ""),
+                "humidity": sensor.get("humidity", ""),
+                "light": sensor.get("light", "unknown"),
+                "mode": sensor.get("mode", "unknown"),
+            }
+        )
+
+    trim_sensor_history()
+
+
+def trim_sensor_history():
+    with open(HISTORY_FILE, "r", encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    if len(rows) <= MAX_HISTORY_ROWS:
+        return
+
+    rows = rows[-MAX_HISTORY_ROWS:]
+    with open(HISTORY_FILE, "w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=["measured_at", "temperature", "humidity", "light", "mode"],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def load_sensor_history(limit=HISTORY_API_LIMIT):
+    ensure_history_file()
+
+    with open(HISTORY_FILE, "r", encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    recent_rows = rows[-limit:]
+    history = []
+    for row in recent_rows:
+        history.append(
+            {
+                "measured_at": row["measured_at"],
+                "temperature": _to_float_or_none(row["temperature"]),
+                "humidity": _to_float_or_none(row["humidity"]),
+                "light": row["light"] or "unknown",
+                "mode": row["mode"] or "unknown",
+            }
+        )
+
+    return history
+
+
+def _to_float_or_none(value):
+    if value in ("", None, "None"):
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def analyze_status(sensor, config):
@@ -43,7 +129,7 @@ def analyze_status(sensor, config):
     warnings = []
 
     if sensor["temperature"] is None or sensor["humidity"] is None:
-        return ["sensor"], ["센서값을 읽지 못했습니다. 배선 또는 센서 상태를 확인하세요."]
+        return ["sensor"], ["센서 값을 읽지 못했습니다. 배선 또는 센서 상태를 확인해 주세요."]
 
     temp = float(sensor["temperature"])
     humidity = float(sensor["humidity"])
@@ -89,6 +175,10 @@ def apply_auto_control(sensor, config, abnormal):
         pump_on = sensor["humidity"] is not None and float(sensor["humidity"]) < float(config["min_humidity"])
         buzzer_on = len(abnormal) >= 2 and abnormal_duration >= ABNORMAL_DURATION_SECONDS
 
+        previous_fan = device_state["fan"]
+        previous_pump = device_state["pump"]
+        previous_buzzer = device_state["buzzer"]
+
         device_state["fan"] = fan_on
         device_state["pump"] = pump_on
         device_state["buzzer"] = buzzer_on
@@ -96,6 +186,41 @@ def apply_auto_control(sensor, config, abnormal):
         set_fan(fan_on)
         set_pump(pump_on)
         set_buzzer(buzzer_on)
+
+        plant_name = config.get("plant_name", "식물")
+
+        if fan_on and not previous_fan:
+            send_notification_once(
+                "fan_on",
+                f"[{plant_name}] 팬 자동 작동",
+                (
+                    "온도가 기준보다 높아 팬이 자동으로 켜졌습니다.\n\n"
+                    f"현재 온도: {sensor['temperature']}°C\n"
+                    f"기준 최대 온도: {config['max_temp']}°C"
+                ),
+            )
+
+        if pump_on and not previous_pump:
+            send_notification_once(
+                "pump_on",
+                f"[{plant_name}] 펌프 자동 작동",
+                (
+                    "습도가 기준보다 낮아 펌프가 자동으로 켜졌습니다.\n\n"
+                    f"현재 습도: {sensor['humidity']}%\n"
+                    f"기준 최소 습도: {config['min_humidity']}%"
+                ),
+            )
+
+        if buzzer_on and not previous_buzzer:
+            send_notification_once(
+                "buzzer_on",
+                f"[{plant_name}] 생장 환경 경고",
+                (
+                    "비정상 생장 환경이 지속되어 부저가 작동했습니다.\n\n"
+                    f"비정상 항목 수: {len(abnormal)}개\n"
+                    f"지속 시간: {int(abnormal_duration)}초"
+                ),
+            )
 
     return abnormal_duration
 
@@ -105,6 +230,8 @@ def update_system_once():
 
     config = load_config()
     sensor = read_sensor()
+    append_sensor_history(sensor)
+
     abnormal, warnings = analyze_status(sensor, config)
     abnormal_duration = apply_auto_control(sensor, config, abnormal)
 
@@ -127,7 +254,8 @@ def index():
         warnings=warnings,
         abnormal_duration=int(abnormal_duration),
         abnormal_required=ABNORMAL_DURATION_SECONDS,
-        device_state=device_state
+        device_state=device_state,
+        history_limit=HISTORY_API_LIMIT,
     )
 
 
@@ -139,7 +267,7 @@ def update_config():
         "max_temp": float(request.form.get("max_temp", 28)),
         "min_humidity": float(request.form.get("min_humidity", 40)),
         "max_humidity": float(request.form.get("max_humidity", 70)),
-        "light_required": request.form.get("light_required", "bright")
+        "light_required": request.form.get("light_required", "bright"),
     }
 
     save_config(config)
@@ -159,6 +287,12 @@ def control_device(name, action):
 
     device_state["control_mode"] = "manual"
 
+    device_name_ko = {
+        "fan": "팬",
+        "pump": "펌프",
+        "buzzer": "부저",
+    }
+
     if name == "fan":
         device_state["fan"] = on
         set_fan(on)
@@ -169,6 +303,13 @@ def control_device(name, action):
         device_state["buzzer"] = on
         set_buzzer(on)
 
+    if name in device_name_ko:
+        send_notification_once(
+            f"manual_{name}_{action}",
+            f"[수동 제어] {device_name_ko[name]} {'ON' if on else 'OFF'}",
+            f"웹 UI에서 {device_name_ko[name]} 장치가 수동으로 {'ON' if on else 'OFF'} 처리되었습니다.",
+        )
+
     return redirect("/")
 
 
@@ -176,16 +317,29 @@ def control_device(name, action):
 def api_status():
     config, sensor, abnormal, warnings, abnormal_duration = update_system_once()
 
-    return jsonify({
-        "config": config,
-        "sensor": sensor,
-        "abnormal": abnormal,
-        "warnings": warnings,
-        "abnormal_duration": int(abnormal_duration),
-        "device_state": device_state
-    })
+    return jsonify(
+        {
+            "config": config,
+            "sensor": sensor,
+            "abnormal": abnormal,
+            "warnings": warnings,
+            "abnormal_duration": int(abnormal_duration),
+            "device_state": device_state,
+        }
+    )
+
+
+@app.route("/api/history")
+def api_history():
+    limit = request.args.get("limit", default=HISTORY_API_LIMIT, type=int)
+    if limit <= 0:
+        limit = HISTORY_API_LIMIT
+    limit = min(limit, MAX_HISTORY_ROWS)
+
+    return jsonify({"history": load_sensor_history(limit=limit)})
 
 
 if __name__ == "__main__":
     setup_hardware()
+    ensure_history_file()
     app.run(host="0.0.0.0", port=5000, debug=True)
