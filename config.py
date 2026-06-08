@@ -27,7 +27,7 @@ RELAY_ACTIVE_LOW = True
 
 # 시연용: 원래는 3600초 = 1시간
 # 오늘/내일 테스트는 30초 또는 60초 추천
-ABNORMAL_DURATION_SECONDS = 5
+ABNORMAL_DURATION_SECONDS = 60
 
 DEFAULT_PLANT_CONFIG = {
     "plant_name": "바질",
