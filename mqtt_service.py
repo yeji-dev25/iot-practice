@@ -60,7 +60,7 @@ class MqttService:
         for topic, qos in self._subscriptions:
             client.subscribe(topic, qos=qos)
 
-    def _on_disconnect(self, client, userdata, disconnect_flags, reason_code):
+    def _on_disconnect(self, client, userdata, *args):
         self._connected = False
 
     def _on_message(self, client, userdata, message):
