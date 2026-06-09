@@ -6,10 +6,10 @@ load_dotenv()
 
 # "mock"이면 가짜 센서값 사용
 # "real"이면 실제 라즈베리파이 GPIO 사용
-SENSOR_MODE = "mock"
+SENSOR_MODE = "real"
 
 # DHT 센서 종류: "DHT11" 또는 "DHT22"
-DHT_TYPE = "DHT11"
+DHT_TYPE = "DHT22"
 
 # BCM GPIO 번호 기준
 DHT_PIN = 4
