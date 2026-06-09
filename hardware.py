@@ -20,7 +20,7 @@ light_device = None
 dht_device = None
 
 
-def setup_hardware():
+def setup_hardware(initialize_outputs: bool = True):
     global _real_ready
     global fan_device, pump_device, buzzer_device, light_device, dht_device
 
@@ -54,10 +54,15 @@ def setup_hardware():
         GPIO.setup(LIGHT_PIN, GPIO.IN)
         light_device = GPIO
 
-        # active_high=False면 LOW일 때 ON인 릴레이 대응
-        fan_device = OutputDevice(FAN_PIN, active_high=not RELAY_ACTIVE_LOW, initial_value=False)
-        pump_device = OutputDevice(PUMP_PIN, active_high=not RELAY_ACTIVE_LOW, initial_value=False)
-        buzzer_device = OutputDevice(BUZZER_PIN, active_high=True, initial_value=False)
+        if initialize_outputs:
+            # active_high=False면 LOW일 때 ON인 릴레이 대응
+            fan_device = OutputDevice(FAN_PIN, active_high=not RELAY_ACTIVE_LOW, initial_value=False)
+            pump_device = OutputDevice(PUMP_PIN, active_high=not RELAY_ACTIVE_LOW, initial_value=False)
+            buzzer_device = OutputDevice(BUZZER_PIN, active_high=True, initial_value=False)
+        else:
+            fan_device = None
+            pump_device = None
+            buzzer_device = None
 
         _real_ready = True
         print("[INFO] 실제 하드웨어 모드 초기화 완료")
