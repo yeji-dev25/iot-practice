@@ -1,5 +1,3 @@
-# hardware.py
-
 import random
 from datetime import datetime
 from config import (
@@ -31,7 +29,8 @@ def setup_hardware():
         return
 
     try:
-        from gpiozero import OutputDevice, DigitalInputDevice
+        from gpiozero import OutputDevice
+        import RPi.GPIO as GPIO
         import board
         import adafruit_dht
 
@@ -50,7 +49,10 @@ def setup_hardware():
         else:
             dht_device = adafruit_dht.DHT11(dht_pin)
 
-        light_device = DigitalInputDevice(LIGHT_PIN)
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(LIGHT_PIN, GPIO.IN)
+        light_device = GPIO
 
         # active_high=False면 LOW일 때 ON인 릴레이 대응
         fan_device = OutputDevice(FAN_PIN, active_high=not RELAY_ACTIVE_LOW, initial_value=False)
@@ -83,6 +85,11 @@ def read_mock_sensor():
 
 
 def read_real_sensor():
+    temperature = None
+    humidity = None
+    light = "unknown"
+    errors = []
+
     try:
         temperature = dht_device.temperature
         humidity = dht_device.humidity
@@ -90,29 +97,30 @@ def read_real_sensor():
         if temperature is None or humidity is None:
             raise RuntimeError("DHT 센서값이 None입니다.")
 
+        temperature = round(float(temperature), 1)
+        humidity = round(float(humidity), 1)
+    except Exception as e:
+        errors.append(f"DHT: {e}")
+
+    try:
         # 조도센서 DO 기준
         # 모듈마다 HIGH/LOW 의미가 반대일 수 있음
         # 웹에서 조도 상태가 반대로 나오면 여기 bright/dark만 바꾸면 됨
-        light_value = light_device.value
+        light_value = light_device.input(LIGHT_PIN)
         light = "bright" if light_value == 1 else "dark"
-
-        return {
-            "temperature": round(float(temperature), 1),
-            "humidity": round(float(humidity), 1),
-            "light": light,
-            "measured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "mode": "real"
-        }
-
     except Exception as e:
-        print("[WARN] 센서 읽기 실패:", e)
-        return {
-            "temperature": None,
-            "humidity": None,
-            "light": "unknown",
-            "measured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "mode": "real-error"
-        }
+        errors.append(f"LIGHT: {e}")
+
+    if errors:
+        print("[WARN] 센서 읽기 실패:", " | ".join(errors))
+
+    return {
+        "temperature": temperature,
+        "humidity": humidity,
+        "light": light,
+        "measured_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "mode": "real" if not errors else "real-error"
+    }
 
 
 def set_fan(on: bool):
