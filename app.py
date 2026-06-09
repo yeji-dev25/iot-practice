@@ -283,15 +283,13 @@ def apply_auto_control(sensor, config, abnormal):
 
     if device_state["control_mode"] == "auto":
         fan_on = sensor["temperature"] is not None and float(sensor["temperature"]) > float(config["max_temp"])
-        pump_on = sensor["humidity"] is not None and float(sensor["humidity"]) < float(config["min_humidity"])
         buzzer_on = len(abnormal) >= 2 and abnormal_duration >= abnormal_required
 
         previous_fan = device_state["fan"]
-        previous_pump = device_state["pump"]
         previous_buzzer = device_state["buzzer"]
 
         publish_device_command("fan", fan_on)
-        publish_device_command("pump", pump_on)
+        publish_device_command("pump", False)
         publish_device_command("buzzer", buzzer_on)
 
         plant_name = config.get("plant_name", "식물")
@@ -304,17 +302,6 @@ def apply_auto_control(sensor, config, abnormal):
                     "온도가 기준보다 높아 팬이 자동으로 켜졌습니다.\n\n"
                     f"현재 온도: {sensor['temperature']}°C\n"
                     f"기준 최대 온도: {config['max_temp']}°C"
-                ),
-            )
-
-        if pump_on and not previous_pump:
-            send_notification_once(
-                "pump_on",
-                f"[{plant_name}] 펌프 자동 작동",
-                (
-                    "습도가 기준보다 낮아 펌프가 자동으로 켜졌습니다.\n\n"
-                    f"현재 습도: {sensor['humidity']}%\n"
-                    f"기준 최소 습도: {config['min_humidity']}%"
                 ),
             )
 
@@ -341,6 +328,20 @@ def publish_device_command(name: str, on: bool):
             "action": "on" if on else "off",
             "requested_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         },
+    )
+
+
+def notify_manual_device_action(name: str, action: str):
+    device_name_ko = {
+        "fan": "팬",
+        "pump": "펌프",
+        "buzzer": "부저",
+    }
+
+    send_notification_once(
+        f"manual_{name}_{action}",
+        f"[수동 제어] {device_name_ko[name]} {'ON' if action == 'on' else 'OFF'}",
+        f"웹 UI에서 {device_name_ko[name]} 장치가 수동으로 {'ON' if action == 'on' else 'OFF'} 처리되었습니다.",
     )
 
 
@@ -402,27 +403,76 @@ def change_mode(mode):
     return redirect("/")
 
 
+@app.route("/api/mode/<mode>")
+def api_change_mode(mode):
+    if mode not in ["auto", "manual"]:
+        return jsonify({"ok": False, "message": "invalid mode"}), 400
+
+    device_state["control_mode"] = mode
+    return jsonify(
+        {
+            "ok": True,
+            "control_mode": device_state["control_mode"],
+            "device_state": {
+                "fan": device_state["fan"],
+                "pump": device_state["pump"],
+                "buzzer": device_state["buzzer"],
+            },
+        }
+    )
+
+
 @app.route("/device/<name>/<action>")
 def control_device(name, action):
+    if name not in {"fan", "pump", "buzzer"} or action not in {"on", "off"}:
+        return redirect("/")
+
     on = action == "on"
     device_state["control_mode"] = "manual"
-
-    device_name_ko = {
-        "fan": "팬",
-        "pump": "펌프",
-        "buzzer": "부저",
-    }
+    device_state[name] = on
 
     publish_device_command(name, on)
 
-    if name in device_name_ko:
-        send_notification_once(
-            f"manual_{name}_{action}",
-            f"[수동 제어] {device_name_ko[name]} {'ON' if on else 'OFF'}",
-            f"웹 UI에서 {device_name_ko[name]} 장치가 수동으로 {'ON' if on else 'OFF'} 처리되었습니다.",
-        )
+    threading.Thread(
+        target=notify_manual_device_action,
+        args=(name, action),
+        daemon=True,
+    ).start()
 
     return redirect("/")
+
+
+@app.route("/api/device/<name>/<action>")
+def api_control_device(name, action):
+    if name not in {"fan", "pump", "buzzer"}:
+        return jsonify({"ok": False, "message": "invalid device"}), 400
+    if action not in {"on", "off"}:
+        return jsonify({"ok": False, "message": "invalid action"}), 400
+
+    on = action == "on"
+    device_state["control_mode"] = "manual"
+    device_state[name] = on
+
+    publish_device_command(name, on)
+    threading.Thread(
+        target=notify_manual_device_action,
+        args=(name, action),
+        daemon=True,
+    ).start()
+
+    return jsonify(
+        {
+            "ok": True,
+            "control_mode": device_state["control_mode"],
+            "device": name,
+            "action": action,
+            "device_state": {
+                "fan": device_state["fan"],
+                "pump": device_state["pump"],
+                "buzzer": device_state["buzzer"],
+            },
+        }
+    )
 
 
 @app.route("/api/status")

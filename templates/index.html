@@ -691,8 +691,8 @@
                     <div class="pill">제어 모드 <strong id="controlMode">{{ device_state.control_mode }}</strong></div>
                 </div>
                 <div class="mode-actions">
-                    <a class="btn-primary" href="/mode/auto">자동 모드</a>
-                    <a class="btn-secondary" href="/mode/manual">수동 모드</a>
+                    <a class="btn-primary js-mode-action" href="/mode/auto" data-api-url="/api/mode/auto">자동 모드</a>
+                    <a class="btn-secondary js-mode-action" href="/mode/manual" data-api-url="/api/mode/manual">수동 모드</a>
                 </div>
             </div>
 
@@ -842,8 +842,8 @@
                             <span id="fanState" class="device-state {{ 'device-on' if device_state.fan else 'device-off' }}">
                                 {{ "ON" if device_state.fan else "OFF" }}
                             </span>
-                            <a class="device-btn-on" href="/device/fan/on">ON</a>
-                            <a class="device-btn-off" href="/device/fan/off">OFF</a>
+                            <a class="device-btn-on js-device-action" href="/device/fan/on" data-api-url="/api/device/fan/on">ON</a>
+                            <a class="device-btn-off js-device-action" href="/device/fan/off" data-api-url="/api/device/fan/off">OFF</a>
                         </div>
                     </div>
 
@@ -852,15 +852,15 @@
                             <div class="device-icon">물</div>
                             <div>
                                 <div class="device-name">펌프</div>
-                                <div class="device-desc">습도가 낮을 때 물 공급을 보조합니다.</div>
+                                <div class="device-desc">웹에서 필요할 때 수동으로 급수할 수 있습니다.</div>
                             </div>
                         </div>
                         <div class="device-actions">
                             <span id="pumpState" class="device-state {{ 'device-on' if device_state.pump else 'device-off' }}">
                                 {{ "ON" if device_state.pump else "OFF" }}
                             </span>
-                            <a class="device-btn-on" href="/device/pump/on">ON</a>
-                            <a class="device-btn-off" href="/device/pump/off">OFF</a>
+                            <a class="device-btn-on js-device-action" href="/device/pump/on" data-api-url="/api/device/pump/on">ON</a>
+                            <a class="device-btn-off js-device-action" href="/device/pump/off" data-api-url="/api/device/pump/off">OFF</a>
                         </div>
                     </div>
 
@@ -876,8 +876,8 @@
                             <span id="buzzerState" class="device-state {{ 'device-on' if device_state.buzzer else 'device-off' }}">
                                 {{ "ON" if device_state.buzzer else "OFF" }}
                             </span>
-                            <a class="device-btn-danger" href="/device/buzzer/on">ON</a>
-                            <a class="device-btn-off" href="/device/buzzer/off">OFF</a>
+                            <a class="device-btn-danger js-device-action" href="/device/buzzer/on" data-api-url="/api/device/buzzer/on">ON</a>
+                            <a class="device-btn-off js-device-action" href="/device/buzzer/off" data-api-url="/api/device/buzzer/off">OFF</a>
                         </div>
                     </div>
                 </div>
@@ -955,6 +955,8 @@
 
     <script>
         const historyLimit = {{ history_limit }};
+        const HISTORY_REFRESH_INTERVAL_MS = 15000;
+        const STATUS_REFRESH_INTERVAL_MS = 5000;
         let historyChart = null;
 
         function formatTemperature(value) {
@@ -1144,30 +1146,88 @@
             setDeviceState("buzzerState", status.device_state.buzzer);
         }
 
+        async function refreshStatus() {
+            const statusResponse = await fetch("/api/status");
+            const statusPayload = await statusResponse.json();
+            updateStatus(statusPayload);
+            return statusPayload;
+        }
+
+        async function refreshHistory() {
+            const historyResponse = await fetch(`/api/history?limit=${historyLimit}`);
+            const historyPayload = await historyResponse.json();
+
+            if (!historyChart) {
+                buildChart(historyPayload.history || []);
+            } else {
+                updateChart(historyPayload.history || []);
+            }
+        }
+
         async function refreshDashboard() {
             try {
-                const [statusResponse, historyResponse] = await Promise.all([
-                    fetch("/api/status"),
-                    fetch(`/api/history?limit=${historyLimit}`)
-                ]);
-
-                const statusPayload = await statusResponse.json();
-                const historyPayload = await historyResponse.json();
-
-                updateStatus(statusPayload);
-
-                if (!historyChart) {
-                    buildChart(historyPayload.history || []);
-                } else {
-                    updateChart(historyPayload.history || []);
-                }
+                await Promise.all([refreshStatus(), refreshHistory()]);
             } catch (error) {
                 console.error("대시보드 갱신 실패:", error);
             }
         }
 
+        async function requestAction(apiUrl) {
+            const response = await fetch(apiUrl, {
+                method: "GET",
+                headers: {
+                    "X-Requested-With": "fetch"
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`request failed: ${response.status}`);
+            }
+
+            return response.json();
+        }
+
+        function bindAsyncActions() {
+            document.querySelectorAll(".js-mode-action, .js-device-action").forEach((element) => {
+                element.addEventListener("click", async (event) => {
+                    event.preventDefault();
+
+                    const apiUrl = element.dataset.apiUrl;
+                    if (!apiUrl) {
+                        return;
+                    }
+
+                    try {
+                        element.style.pointerEvents = "none";
+                        const result = await requestAction(apiUrl);
+
+                        if (result.control_mode) {
+                            document.getElementById("controlMode").textContent = result.control_mode;
+                        }
+                        if (result.device_state) {
+                            setDeviceState("fanState", result.device_state.fan);
+                            setDeviceState("pumpState", result.device_state.pump);
+                            setDeviceState("buzzerState", result.device_state.buzzer);
+                        }
+                        window.setTimeout(() => {
+                            refreshStatus().catch((refreshError) => {
+                                console.error("상태 동기화 실패:", refreshError);
+                            });
+                        }, 0);
+                    } catch (error) {
+                        console.error("장치 제어 실패:", error);
+                        window.location.href = element.getAttribute("href");
+                    } finally {
+                        element.style.pointerEvents = "";
+                    }
+                });
+            });
+        }
+
         refreshDashboard();
-        setInterval(refreshDashboard, 5000);
+        bindAsyncActions();
+        setInterval(refreshStatus, STATUS_REFRESH_INTERVAL_MS);
+        setInterval(refreshHistory, HISTORY_REFRESH_INTERVAL_MS);
     </script>
 </body>
 </html>
