@@ -8,7 +8,14 @@ from flask import Flask, jsonify, redirect, render_template, request
 
 from config import ABNORMAL_DURATION_SECONDS, DEFAULT_PLANT_CONFIG
 from mqtt_service import MqttService
-from mqtt_topics import COMMAND_TOPIC, DEVICE_STATE_TOPIC, SENSOR_TOPIC, STATUS_TOPIC
+from mqtt_topics import (
+    COMMAND_TOPIC,
+    DEVICE_STATE_TOPIC,
+    HUMIDITY_TOPIC,
+    SENSOR_TOPIC,
+    STATUS_TOPIC,
+    TEMPERATURE_TOPIC,
+)
 from notifier import send_notification_once
 
 app = Flask(__name__)
@@ -49,6 +56,8 @@ def ensure_runtime_started():
     if runtime_started:
         return
 
+    mqtt_service.subscribe_json(TEMPERATURE_TOPIC, handle_temperature_message)
+    mqtt_service.subscribe_json(HUMIDITY_TOPIC, handle_humidity_message)
     mqtt_service.subscribe_json(SENSOR_TOPIC, handle_sensor_message)
     mqtt_service.subscribe_json(DEVICE_STATE_TOPIC, handle_device_state_message)
     mqtt_service.subscribe_json(STATUS_TOPIC, handle_status_message)
@@ -56,12 +65,30 @@ def ensure_runtime_started():
     runtime_started = True
 
 
+def handle_temperature_message(payload: dict):
+    update_latest_sensor(
+        {
+            "temperature": payload.get("value"),
+            "measured_at": payload.get("measured_at"),
+            "mode": payload.get("mode"),
+        }
+    )
+
+
+def handle_humidity_message(payload: dict):
+    update_latest_sensor(
+        {
+            "humidity": payload.get("value"),
+            "measured_at": payload.get("measured_at"),
+            "mode": payload.get("mode"),
+        }
+    )
+
+
 def handle_sensor_message(sensor: dict):
     global latest_sensor, latest_warnings, latest_abnormal
 
-    sensor = normalize_sensor(sensor)
-    with state_lock:
-        latest_sensor = sensor
+    sensor = update_latest_sensor(sensor)
 
     append_sensor_history(sensor)
 
@@ -91,6 +118,16 @@ def normalize_sensor(sensor: dict):
     normalized = DEFAULT_SENSOR.copy()
     normalized.update(sensor)
     return normalized
+
+
+def update_latest_sensor(sensor_update: dict):
+    global latest_sensor
+
+    with state_lock:
+        merged = latest_sensor.copy()
+        merged.update(sensor_update)
+        latest_sensor = normalize_sensor(merged)
+        return latest_sensor.copy()
 
 
 def load_config():

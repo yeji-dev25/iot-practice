@@ -5,7 +5,14 @@ from datetime import datetime
 
 from hardware import read_sensor, set_buzzer, set_fan, set_pump, setup_hardware
 from mqtt_service import MqttService
-from mqtt_topics import COMMAND_TOPIC, DEVICE_STATE_TOPIC, SENSOR_TOPIC, STATUS_TOPIC
+from mqtt_topics import (
+    COMMAND_TOPIC,
+    DEVICE_STATE_TOPIC,
+    HUMIDITY_TOPIC,
+    SENSOR_TOPIC,
+    STATUS_TOPIC,
+    TEMPERATURE_TOPIC,
+)
 
 PUBLISH_INTERVAL_SECONDS = 5
 
@@ -48,7 +55,33 @@ def handle_command(payload: dict):
 def publish_sensor_loop():
     while not stop_event.is_set():
         sensor = read_sensor()
-        mqtt_service.publish(SENSOR_TOPIC, sensor, retain=True)
+        mqtt_service.publish(
+            TEMPERATURE_TOPIC,
+            {
+                "value": sensor.get("temperature"),
+                "measured_at": sensor.get("measured_at"),
+                "mode": sensor.get("mode"),
+            },
+            retain=True,
+        )
+        mqtt_service.publish(
+            HUMIDITY_TOPIC,
+            {
+                "value": sensor.get("humidity"),
+                "measured_at": sensor.get("measured_at"),
+                "mode": sensor.get("mode"),
+            },
+            retain=True,
+        )
+        mqtt_service.publish(
+            SENSOR_TOPIC,
+            {
+                "light": sensor.get("light"),
+                "measured_at": sensor.get("measured_at"),
+                "mode": sensor.get("mode"),
+            },
+            retain=True,
+        )
         mqtt_service.publish(
             STATUS_TOPIC,
             {
