@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>화분 생장 환경 모니터링</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <style>
         :root {
             --surface: rgba(255, 252, 246, 0.84);
@@ -992,6 +992,10 @@
         }
 
         function buildChart(history) {
+            if (typeof Chart === "undefined") {
+                console.warn("Chart.js가 아직 로드되지 않았습니다.");
+                return;
+            }
             const ctx = document.getElementById("historyChart");
             const labels = history.map((item) => item.measured_at.slice(11));
             const temperatureData = history.map((item) => item.temperature);
@@ -1111,6 +1115,10 @@
         }
 
         function updateChart(history) {
+            if (!historyChart) {
+                buildChart(history);
+                return;
+            }
             const labels = history.map((item) => item.measured_at.slice(11));
             historyChart.data.labels = labels;
             historyChart.data.datasets[0].data = history.map((item) => item.temperature);
