@@ -6,7 +6,7 @@
 
 - 온도, 습도, 조도 실시간 모니터링
 - MQTT 기반 센서 데이터 Publish / Subscribe
-- 팬, 펌프, 부저 자동 제어
+- 팬, 부저 자동 제어 및 펌프 수동 제어
 - 웹 대시보드 기반 수동 제어
 - 이메일 알림
 - 최근 센서 이력 그래프
@@ -87,13 +87,13 @@ SENSOR_MODE = "real"
 ### DHT Sensor Type
 
 ```python
-DHT_TYPE = "DHT11"
+DHT_TYPE = "DHT22"
 ```
 
-또는
+사용 중인 센서에 따라 아래처럼 바꿀 수 있습니다.
 
 ```python
-DHT_TYPE = "DHT22"
+DHT_TYPE = "DHT11"
 ```
 
 ### MQTT Settings
@@ -140,7 +140,7 @@ python device_agent.py
 역할:
 
 - 센서 데이터 측정
-- MQTT로 센서 데이터 Publish
+- MQTT로 온도, 습도, 조도 데이터 Publish
 - MQTT 제어 명령 Subscribe
 - 팬 / 펌프 / 부저 제어
 
@@ -154,7 +154,7 @@ python app.py
 
 - MQTT로 센서 데이터 Subscribe
 - 웹 대시보드 제공
-- 자동 제어 로직 수행
+- 팬, 부저 자동 제어 로직 수행
 - MQTT로 장치 제어 명령 Publish
 
 ### 4. Open Dashboard
@@ -176,7 +176,8 @@ http://<raspberry-pi-ip>:5000
 - 현재 온도 / 습도 / 조도 표시
 - 최근 센서 추이 그래프
 - 자동 / 수동 모드 전환
-- 팬 / 펌프 / 부저 제어
+- 팬 / 부저 자동 제어
+- 펌프 수동 제어
 - 식물 이름, 기준값, 경보 기준 시간 설정
 - 비정상 상태 요약
 
@@ -185,7 +186,7 @@ http://<raspberry-pi-ip>:5000
 자동 모드에서는 아래 규칙으로 동작합니다.
 
 - 온도가 최대 기준보다 높으면 팬 ON
-- 습도가 최소 기준보다 낮으면 펌프 ON
+- 펌프는 자동 모드에서도 자동으로 켜지지 않으며 수동 제어로만 동작
 - 비정상 항목이 2개 이상이고 설정한 시간 이상 지속되면 부저 ON
 
 비정상 항목은 다음을 기준으로 판단합니다.
@@ -198,7 +199,9 @@ http://<raspberry-pi-ip>:5000
 
 기본 prefix: `iot/plant-monitor`
 
-- 센서 데이터: `iot/plant-monitor/sensor`
+- 온도 데이터: `iot/plant-monitor/sensor/temperature`
+- 습도 데이터: `iot/plant-monitor/sensor/humidity`
+- 조도 데이터: `iot/plant-monitor/sensor`
 - 장치 상태: `iot/plant-monitor/device-state`
 - 제어 명령: `iot/plant-monitor/commands`
 - 디바이스 상태: `iot/plant-monitor/status`
@@ -242,10 +245,11 @@ http://<raspberry-pi-ip>:5000
 `config.py`에서 아래 값을 조정합니다.
 
 ```python
-RELAY_ACTIVE_LOW = True
+RELAY_ACTIVE_LOW = False
 ```
 
-필요하면 `False`로 바꿉니다.
+현재 팬/펌프 테스트 기준으로 HIGH 신호에서 릴레이가 켜집니다.
+릴레이가 반대로 동작하면 `True`로 바꿉니다.
 
 ## Notes
 
