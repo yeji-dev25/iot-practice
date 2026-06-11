@@ -112,7 +112,7 @@ def read_real_sensor():
         # 모듈마다 HIGH/LOW 의미가 반대일 수 있음
         # 웹에서 조도 상태가 반대로 나오면 여기 bright/dark만 바꾸면 됨
         light_value = light_device.input(LIGHT_PIN)
-        light = "bright" if light_value == 1 else "dark"
+        light = "dark" if light_value == 1 else "bright"
     except Exception as e:
         errors.append(f"LIGHT: {e}")
 

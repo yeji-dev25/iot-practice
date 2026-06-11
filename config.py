@@ -19,9 +19,9 @@ FAN_PIN = 27
 PUMP_PIN = 22
 BUZZER_PIN = 23
 
-# 릴레이 모듈이 LOW 신호에서 켜지는 경우가 많음
-# 장치가 반대로 동작하면 True/False 바꾸기
-RELAY_ACTIVE_LOW = True
+# 현재 팬/펌프 테스트 스크립트 기준으로 HIGH 신호에서 릴레이가 켜집니다.
+# 장치가 반대로 동작하면 True/False를 다시 바꾸면 됩니다.
+RELAY_ACTIVE_LOW = False
 
 # 기본 부저 경보 기준 시간
 ABNORMAL_DURATION_SECONDS = 60
