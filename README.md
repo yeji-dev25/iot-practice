@@ -70,6 +70,22 @@ pip install -r requirements.txt
 
 ## Configuration
 
+### .env File
+
+`.env.example` 파일을 복사해서 `.env` 파일을 만든 뒤, 필요한 값을 수정해서 사용합니다.
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS / Linux:
+
+```bash
+cp .env.example .env
+```
+
 ### Sensor Mode
 
 테스트용 가짜 데이터:
