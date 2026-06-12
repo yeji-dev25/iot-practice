@@ -26,6 +26,9 @@ CONFIG_FILE = "plant_config.json"
 HISTORY_FILE = "sensor_history.csv"
 MAX_HISTORY_ROWS = 500
 HISTORY_API_LIMIT = 30
+HISTORY_FIELDNAMES = ["measured_at", "temperature", "humidity", "light", "mode"]
+MANAGED_DEVICE_NAMES = ("fan", "pump", "buzzer")
+VALID_CONTROL_MODES = {"auto", "manual"}
 
 DEFAULT_SENSOR = {
     "temperature": None,
@@ -54,6 +57,7 @@ runtime_started = False
 
 
 def build_status_payload():
+    """HTTP 응답과 Socket.IO 이벤트에서 공통으로 사용하는 대시보드 상태를 만든다."""
     config = load_config()
     with state_lock:
         sensor = latest_sensor.copy()
@@ -78,6 +82,7 @@ def build_status_payload():
 
 
 def emit_realtime_update(include_history: bool = False):
+    # MQTT 메시지로 서버 상태를 갱신한 뒤, 최신 상태를 브라우저로 즉시 전송한다.
     socketio.emit("status_update", build_status_payload())
     if include_history:
         socketio.emit(
@@ -87,6 +92,7 @@ def emit_realtime_update(include_history: bool = False):
 
 
 def ensure_runtime_started():
+    """Flask 서비스가 시작될 때 MQTT 구독을 한 번만 초기화한다."""
     global runtime_started
     if runtime_started:
         return
@@ -101,23 +107,11 @@ def ensure_runtime_started():
 
 
 def handle_temperature_message(payload: dict):
-    update_latest_sensor(
-        {
-            "temperature": payload.get("value"),
-            "measured_at": payload.get("measured_at"),
-            "mode": payload.get("mode"),
-        }
-    )
+    update_latest_sensor(extract_metric_update(payload, "temperature"))
 
 
 def handle_humidity_message(payload: dict):
-    update_latest_sensor(
-        {
-            "humidity": payload.get("value"),
-            "measured_at": payload.get("measured_at"),
-            "mode": payload.get("mode"),
-        }
-    )
+    update_latest_sensor(extract_metric_update(payload, "humidity"))
 
 
 def handle_sensor_message(sensor: dict):
@@ -140,7 +134,7 @@ def handle_sensor_message(sensor: dict):
 
 def handle_device_state_message(payload: dict):
     with state_lock:
-        for name in ("fan", "pump", "buzzer"):
+        for name in MANAGED_DEVICE_NAMES:
             if name in payload:
                 device_state[name] = bool(payload[name])
 
@@ -159,6 +153,14 @@ def normalize_sensor(sensor: dict):
     normalized = DEFAULT_SENSOR.copy()
     normalized.update(sensor)
     return normalized
+
+
+def extract_metric_update(payload: dict, field_name: str):
+    return {
+        field_name: payload.get("value"),
+        "measured_at": payload.get("measured_at"),
+        "mode": payload.get("mode"),
+    }
 
 
 def update_latest_sensor(sensor_update: dict):
@@ -198,10 +200,7 @@ def ensure_history_file():
         return
 
     with open(HISTORY_FILE, "w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(
-            file,
-            fieldnames=["measured_at", "temperature", "humidity", "light", "mode"],
-        )
+        writer = csv.DictWriter(file, fieldnames=HISTORY_FIELDNAMES)
         writer.writeheader()
 
 
@@ -209,10 +208,7 @@ def append_sensor_history(sensor):
     ensure_history_file()
 
     with open(HISTORY_FILE, "a", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(
-            file,
-            fieldnames=["measured_at", "temperature", "humidity", "light", "mode"],
-        )
+        writer = csv.DictWriter(file, fieldnames=HISTORY_FIELDNAMES)
         writer.writerow(
             {
                 "measured_at": sensor.get("measured_at", ""),
@@ -235,10 +231,7 @@ def trim_sensor_history():
 
     rows = rows[-MAX_HISTORY_ROWS:]
     with open(HISTORY_FILE, "w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(
-            file,
-            fieldnames=["measured_at", "temperature", "humidity", "light", "mode"],
-        )
+        writer = csv.DictWriter(file, fieldnames=HISTORY_FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
 
@@ -372,6 +365,26 @@ def publish_device_command(name: str, on: bool):
     )
 
 
+def build_device_state_payload():
+    return {name: device_state[name] for name in MANAGED_DEVICE_NAMES}
+
+
+def apply_device_action(name: str, action: str):
+    on = action == "on"
+    device_state["control_mode"] = "manual"
+    device_state[name] = on
+
+    publish_device_command(name, on)
+    threading.Thread(
+        target=notify_manual_device_action,
+        args=(name, action),
+        daemon=True,
+    ).start()
+
+    emit_realtime_update()
+    return on
+
+
 def notify_manual_device_action(name: str, action: str):
     device_name_ko = {
         "fan": "팬",
@@ -443,7 +456,7 @@ def update_config():
 
 @app.route("/mode/<mode>")
 def change_mode(mode):
-    if mode in ["auto", "manual"]:
+    if mode in VALID_CONTROL_MODES:
         device_state["control_mode"] = mode
         emit_realtime_update()
     return redirect("/")
@@ -451,7 +464,7 @@ def change_mode(mode):
 
 @app.route("/api/mode/<mode>")
 def api_change_mode(mode):
-    if mode not in ["auto", "manual"]:
+    if mode not in VALID_CONTROL_MODES:
         return jsonify({"ok": False, "message": "invalid mode"}), 400
 
     device_state["control_mode"] = mode
@@ -460,68 +473,35 @@ def api_change_mode(mode):
         {
             "ok": True,
             "control_mode": device_state["control_mode"],
-            "device_state": {
-                "fan": device_state["fan"],
-                "pump": device_state["pump"],
-                "buzzer": device_state["buzzer"],
-            },
+            "device_state": build_device_state_payload(),
         }
     )
 
 
 @app.route("/device/<name>/<action>")
 def control_device(name, action):
-    if name not in {"fan", "pump", "buzzer"} or action not in {"on", "off"}:
+    if name not in MANAGED_DEVICE_NAMES or action not in {"on", "off"}:
         return redirect("/")
 
-    on = action == "on"
-    device_state["control_mode"] = "manual"
-    device_state[name] = on
-
-    publish_device_command(name, on)
-
-    threading.Thread(
-        target=notify_manual_device_action,
-        args=(name, action),
-        daemon=True,
-    ).start()
-
-    emit_realtime_update()
-
+    apply_device_action(name, action)
     return redirect("/")
 
 
 @app.route("/api/device/<name>/<action>")
 def api_control_device(name, action):
-    if name not in {"fan", "pump", "buzzer"}:
+    if name not in MANAGED_DEVICE_NAMES:
         return jsonify({"ok": False, "message": "invalid device"}), 400
     if action not in {"on", "off"}:
         return jsonify({"ok": False, "message": "invalid action"}), 400
 
-    on = action == "on"
-    device_state["control_mode"] = "manual"
-    device_state[name] = on
-
-    publish_device_command(name, on)
-    threading.Thread(
-        target=notify_manual_device_action,
-        args=(name, action),
-        daemon=True,
-    ).start()
-
-    emit_realtime_update()
-
+    apply_device_action(name, action)
     return jsonify(
         {
             "ok": True,
             "control_mode": device_state["control_mode"],
             "device": name,
             "action": action,
-            "device_state": {
-                "fan": device_state["fan"],
-                "pump": device_state["pump"],
-                "buzzer": device_state["buzzer"],
-            },
+            "device_state": build_device_state_payload(),
         }
     )
 

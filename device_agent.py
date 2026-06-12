@@ -15,6 +15,7 @@ from mqtt_topics import (
 )
 
 PUBLISH_INTERVAL_SECONDS = 5
+DEVICE_STATUS_SERVICE_NAME = "device-agent"
 
 device_state = {
     "fan": False,
@@ -28,11 +29,56 @@ mqtt_service = MqttService(client_id="plant-device-agent")
 
 
 def publish_device_state():
+    """대시보드와 동기화되도록 현재 장치 상태를 MQTT로 발행한다."""
     device_state["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     mqtt_service.publish(DEVICE_STATE_TOPIC, device_state, retain=True)
 
 
+def publish_sensor_payload(sensor: dict):
+    """웹 서비스가 구독하는 MQTT 토픽으로 센서 데이터를 발행한다."""
+    measured_at = sensor.get("measured_at")
+    mode = sensor.get("mode")
+
+    mqtt_service.publish(
+        TEMPERATURE_TOPIC,
+        {
+            "value": sensor.get("temperature"),
+            "measured_at": measured_at,
+            "mode": mode,
+        },
+        retain=True,
+    )
+    mqtt_service.publish(
+        HUMIDITY_TOPIC,
+        {
+            "value": sensor.get("humidity"),
+            "measured_at": measured_at,
+            "mode": mode,
+        },
+        retain=True,
+    )
+    mqtt_service.publish(
+        SENSOR_TOPIC,
+        {
+            "light": sensor.get("light"),
+            "measured_at": measured_at,
+            "mode": mode,
+        },
+        retain=True,
+    )
+    mqtt_service.publish(
+        STATUS_TOPIC,
+        {
+            "service": DEVICE_STATUS_SERVICE_NAME,
+            "connected": True,
+            "measured_at": measured_at,
+        },
+        retain=True,
+    )
+
+
 def handle_command(payload: dict):
+    """MQTT 제어 명령을 해석해 로컬 GPIO 장치에 적용한다."""
     name = payload.get("name")
     action = payload.get("action")
     on = action == "on"
@@ -53,44 +99,10 @@ def handle_command(payload: dict):
 
 
 def publish_sensor_loop():
+    """일정 주기로 하드웨어를 읽고 최신 센서값을 MQTT로 발행한다."""
     while not stop_event.is_set():
         sensor = read_sensor()
-        mqtt_service.publish(
-            TEMPERATURE_TOPIC,
-            {
-                "value": sensor.get("temperature"),
-                "measured_at": sensor.get("measured_at"),
-                "mode": sensor.get("mode"),
-            },
-            retain=True,
-        )
-        mqtt_service.publish(
-            HUMIDITY_TOPIC,
-            {
-                "value": sensor.get("humidity"),
-                "measured_at": sensor.get("measured_at"),
-                "mode": sensor.get("mode"),
-            },
-            retain=True,
-        )
-        mqtt_service.publish(
-            SENSOR_TOPIC,
-            {
-                "light": sensor.get("light"),
-                "measured_at": sensor.get("measured_at"),
-                "mode": sensor.get("mode"),
-            },
-            retain=True,
-        )
-        mqtt_service.publish(
-            STATUS_TOPIC,
-            {
-                "service": "device-agent",
-                "connected": True,
-                "measured_at": sensor.get("measured_at"),
-            },
-            retain=True,
-        )
+        publish_sensor_payload(sensor)
         stop_event.wait(PUBLISH_INTERVAL_SECONDS)
 
 

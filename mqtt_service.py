@@ -9,6 +9,7 @@ from config import MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_PASSWORD, MQTT_USERN
 
 class MqttService:
     def __init__(self, client_id: str):
+        """두 서버 프로세스에서 공통으로 사용하는 MQTT 클라이언트 래퍼."""
         self.client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)
         self._connected = False
         self._started = False
@@ -28,6 +29,7 @@ class MqttService:
         return self._connected
 
     def start(self):
+        """MQTT 백그라운드 루프를 한 번만 시작한다."""
         with self._lock:
             if self._started:
                 return
@@ -37,6 +39,7 @@ class MqttService:
         self.client.loop_start()
 
     def stop(self):
+        """프로세스 종료 시 MQTT 네트워크 루프를 정리한다."""
         with self._lock:
             if not self._started:
                 return
@@ -50,6 +53,7 @@ class MqttService:
         self.client.publish(topic, message, retain=retain)
 
     def subscribe_json(self, topic: str, handler: Callable[[dict], None], qos: int = 0):
+        """JSON payload를 해석해서 전달하는 토픽 핸들러를 등록한다."""
         self._handlers[topic] = handler
         self._subscriptions.append((topic, qos))
         if self._connected:
@@ -64,6 +68,7 @@ class MqttService:
         self._connected = False
 
     def _on_message(self, client, userdata, message):
+        # 잘못된 payload 하나 때문에 서비스 전체가 멈추지 않도록 무시한다.
         handler = self._handlers.get(message.topic)
         if handler is None:
             return
