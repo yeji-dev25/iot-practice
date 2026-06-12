@@ -5,6 +5,7 @@ import threading
 from datetime import datetime
 
 from flask import Flask, jsonify, redirect, render_template, request
+from flask_socketio import SocketIO, emit
 
 from config import ABNORMAL_DURATION_SECONDS, DEFAULT_PLANT_CONFIG
 from mqtt_service import MqttService
@@ -19,6 +20,7 @@ from mqtt_topics import (
 from notifier import send_notification_once
 
 app = Flask(__name__)
+socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 
 CONFIG_FILE = "plant_config.json"
 HISTORY_FILE = "sensor_history.csv"
@@ -49,6 +51,39 @@ latest_device_status = {"service": "device-agent", "connected": False}
 state_lock = threading.Lock()
 mqtt_service = MqttService(client_id="plant-dashboard-service")
 runtime_started = False
+
+
+def build_status_payload():
+    config = load_config()
+    with state_lock:
+        sensor = latest_sensor.copy()
+        abnormal = list(latest_abnormal)
+        warnings = list(latest_warnings)
+        current_status = latest_device_status.copy()
+
+    abnormal_duration = 0
+    if abnormal_start_time is not None:
+        abnormal_duration = (datetime.now() - abnormal_start_time).total_seconds()
+
+    return {
+        "config": config,
+        "sensor": sensor,
+        "abnormal": abnormal,
+        "warnings": warnings,
+        "abnormal_duration": int(abnormal_duration),
+        "device_state": device_state,
+        "mqtt_connected": mqtt_service.connected,
+        "device_connected": current_status.get("connected", False),
+    }
+
+
+def emit_realtime_update(include_history: bool = False):
+    socketio.emit("status_update", build_status_payload())
+    if include_history:
+        socketio.emit(
+            "history_update",
+            {"history": load_sensor_history(limit=HISTORY_API_LIMIT)},
+        )
 
 
 def ensure_runtime_started():
@@ -100,6 +135,8 @@ def handle_sensor_message(sensor: dict):
         latest_warnings = warnings
         latest_abnormal = abnormal
 
+    emit_realtime_update(include_history=True)
+
 
 def handle_device_state_message(payload: dict):
     with state_lock:
@@ -107,11 +144,15 @@ def handle_device_state_message(payload: dict):
             if name in payload:
                 device_state[name] = bool(payload[name])
 
+    emit_realtime_update()
+
 
 def handle_status_message(payload: dict):
     global latest_device_status
     with state_lock:
         latest_device_status = payload
+
+    emit_realtime_update()
 
 
 def normalize_sensor(sensor: dict):
@@ -347,18 +388,21 @@ def notify_manual_device_action(name: str, action: str):
 
 def update_system_once():
     ensure_runtime_started()
+    payload = build_status_payload()
+    return (
+        payload["config"],
+        payload["sensor"],
+        payload["abnormal"],
+        payload["warnings"],
+        payload["abnormal_duration"],
+    )
 
-    config = load_config()
-    with state_lock:
-        sensor = latest_sensor.copy()
-        abnormal = list(latest_abnormal)
-        warnings = list(latest_warnings)
 
-    abnormal_duration = 0
-    if abnormal_start_time is not None:
-        abnormal_duration = (datetime.now() - abnormal_start_time).total_seconds()
-
-    return config, sensor, abnormal, warnings, abnormal_duration
+@socketio.on("connect")
+def handle_socket_connect():
+    ensure_runtime_started()
+    emit("status_update", build_status_payload())
+    emit("history_update", {"history": load_sensor_history(limit=HISTORY_API_LIMIT)})
 
 
 @app.route("/")
@@ -393,6 +437,7 @@ def update_config():
     }
 
     save_config(config)
+    emit_realtime_update()
     return redirect("/")
 
 
@@ -400,6 +445,7 @@ def update_config():
 def change_mode(mode):
     if mode in ["auto", "manual"]:
         device_state["control_mode"] = mode
+        emit_realtime_update()
     return redirect("/")
 
 
@@ -409,6 +455,7 @@ def api_change_mode(mode):
         return jsonify({"ok": False, "message": "invalid mode"}), 400
 
     device_state["control_mode"] = mode
+    emit_realtime_update()
     return jsonify(
         {
             "ok": True,
@@ -439,6 +486,8 @@ def control_device(name, action):
         daemon=True,
     ).start()
 
+    emit_realtime_update()
+
     return redirect("/")
 
 
@@ -460,6 +509,8 @@ def api_control_device(name, action):
         daemon=True,
     ).start()
 
+    emit_realtime_update()
+
     return jsonify(
         {
             "ok": True,
@@ -477,20 +528,7 @@ def api_control_device(name, action):
 
 @app.route("/api/status")
 def api_status():
-    config, sensor, abnormal, warnings, abnormal_duration = update_system_once()
-
-    return jsonify(
-        {
-            "config": config,
-            "sensor": sensor,
-            "abnormal": abnormal,
-            "warnings": warnings,
-            "abnormal_duration": int(abnormal_duration),
-            "device_state": device_state,
-            "mqtt_connected": mqtt_service.connected,
-            "device_connected": latest_device_status.get("connected", False),
-        }
-    )
+    return jsonify(build_status_payload())
 
 
 @app.route("/api/history")
@@ -506,4 +544,4 @@ def api_history():
 if __name__ == "__main__":
     ensure_runtime_started()
     ensure_history_file()
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True, use_reloader=False)

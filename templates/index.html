@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>화분 생장 환경 모니터링</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
     <style>
         :root {
             --surface: rgba(255, 252, 246, 0.84);
@@ -955,9 +956,9 @@
 
     <script>
         const historyLimit = {{ history_limit }};
-        const HISTORY_REFRESH_INTERVAL_MS = 15000;
-        const STATUS_REFRESH_INTERVAL_MS = 5000;
         let historyChart = null;
+        let socket = null;
+        let pollingTimerId = null;
 
         function formatTemperature(value) {
             return value === null ? "오류" : `${value}°C`;
@@ -1232,10 +1233,54 @@
             });
         }
 
+        function stopPollingFallback() {
+            if (pollingTimerId !== null) {
+                clearInterval(pollingTimerId);
+                pollingTimerId = null;
+            }
+        }
+
+        function startPollingFallback() {
+            if (pollingTimerId !== null) {
+                return;
+            }
+
+            pollingTimerId = setInterval(() => {
+                refreshDashboard().catch((error) => {
+                    console.error("??쒕낫??媛깆떊 ?ㅽ뙣:", error);
+                });
+            }, 5000);
+        }
+
+        function connectRealtimeUpdates() {
+            if (typeof io === "undefined") {
+                console.warn("Socket.IO媛 ?꾩쭅 濡쒕뱶?섏? ?딆븯?듬땲??");
+                startPollingFallback();
+                return;
+            }
+
+            socket = io();
+
+            socket.on("connect", () => {
+                stopPollingFallback();
+            });
+
+            socket.on("disconnect", () => {
+                startPollingFallback();
+            });
+
+            socket.on("status_update", (payload) => {
+                updateStatus(payload);
+            });
+
+            socket.on("history_update", (payload) => {
+                updateChart(payload.history || []);
+            });
+        }
+
         refreshDashboard();
         bindAsyncActions();
-        setInterval(refreshStatus, STATUS_REFRESH_INTERVAL_MS);
-        setInterval(refreshHistory, HISTORY_REFRESH_INTERVAL_MS);
+        connectRealtimeUpdates();
     </script>
 </body>
 </html>
